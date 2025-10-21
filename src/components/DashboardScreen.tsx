@@ -5,11 +5,7 @@ import { Badge } from './ui/badge';
 import { Progress } from './ui/progress';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { useApp } from '../App';
-import { supabase } from '@/integrations/supabase/client';
-import { getDashboard, getNotifications, markNotificationAsRead } from '@/services/backend';
-import { getChallengesView } from '@/services/challengeService';
-import type { ActiveChallenge } from '@/types/backend';
-import {
+import { 
   Flame, 
   Trophy, 
   Star, 
@@ -29,244 +25,120 @@ import {
 import { formatPersianNumber, formatPersianTime, toPersianDigits } from './utils/persianUtils';
 
 const DashboardScreen = () => {
-  const { state, setState, navigate } = useApp();
+  const { state, navigate } = useApp();
   const [notificationOpen, setNotificationOpen] = useState(false);
-  const [activeChallenges, setActiveChallenges] = useState<ActiveChallenge[]>([]);
-  const [isLoadingChallenges, setIsLoadingChallenges] = useState(false);
-  const [notifications, setNotifications] = useState<any[]>([]);
-  const [isLoadingNotifications, setIsLoadingNotifications] = useState(false);
+  
+  // Manage notifications state
+  const [notificationStates, setNotificationStates] = useState<Record<string, boolean>>(() => {
+    const saved = localStorage.getItem('doosell_notification_read_states');
+    return saved ? JSON.parse(saved) : {};
+  });
 
-  // Fetch dashboard data from backend (NO client calculations)
-  useEffect(() => {
-    const fetchDashboardData = async () => {
-      // Only fetch if user is authenticated
-      if (!state.session?.user?.id) {
-        console.log('⏸️ Skipping dashboard fetch - user not authenticated');
-        return;
-      }
-
-      try {
-        // Call get-dashboard Edge Function
-        const dashboard = await getDashboard();
-        
-        if (!dashboard.ok) {
-          console.error('Dashboard fetch failed:', dashboard.error);
-          // Continue to fetch challenges even if dashboard fails
-        } else {
-          // Update state from server response - NO CALCULATIONS
-          setState(prev => ({
-            ...prev,
-            totalPoints: dashboard.xpTotal || 0,
-            streak: dashboard.streak?.current || 0,
-            xpToday: dashboard.today?.xpToday || 0,
-            level: dashboard.level || Math.floor((dashboard.xpTotal || 0) / 500) + 1,
-          }));
-
-          // Fetch practice logs for display
-          const { data: logs } = await supabase
-            .from('practice_logs')
-            .select('*')
-            .eq('user_id', state.session.user.id)
-            .order('practiced_on', { ascending: false });
-
-          if (logs) {
-            const formattedLogs = logs.map(log => ({
-              id: log.id,
-              date: log.practiced_on,
-              minutes: log.minutes,
-              notes: log.note || '',
-              points: 0, // Points not used anymore, all from server
-            }));
-            
-            setState(prev => ({
-              ...prev,
-              practicesLogs: formattedLogs
-            }));
-          }
-        }
-
-        // Always try to fetch challenges data (edge function will handle permission check)
-        setIsLoadingChallenges(true);
-        try {
-          const challengesData = await getChallengesView();
-          if (challengesData.ok && challengesData.active) {
-            // انتخاب چالش فعال مثل صفحه چالش‌ها: اولین چالش periodic با نوع days_in_period
-            const periodicChallenge = challengesData.active.find(
-              ch => ch.kind === 'periodic' && ch.type === 'days_in_period'
-            );
-            setActiveChallenges(periodicChallenge ? [periodicChallenge] : []);
-          }
-        } catch (error) {
-          console.error('Error fetching challenges:', error);
-        } finally {
-          setIsLoadingChallenges(false);
-        }
-      } catch (error) {
-        console.error('Error fetching dashboard data:', error);
-      }
-    };
-
-    fetchDashboardData();
-  }, [state.session?.user?.id]);
-
-  // Fetch notifications
-  useEffect(() => {
-    const fetchNotificationsData = async () => {
-      if (!state.session?.user?.id) return;
-
-      setIsLoadingNotifications(true);
-      try {
-        const data = await getNotifications();
-        setNotifications(data);
-      } catch (error: any) {
-        console.error('Failed to fetch notifications:', error);
-      } finally {
-        setIsLoadingNotifications(false);
-      }
-    };
-
-    fetchNotificationsData();
-  }, [state.session?.user?.id]);
-
-  // All data from server - level included
-  const currentLevel = state.level || 0;
-  const pointsInCurrentLevel = state.totalPoints % 100;
-  const pointsForNextLevel = 100;
+  // Mock data calculations
+  const currentLevel = Math.floor(state.totalPoints / 1000) + 1;
+  const pointsInCurrentLevel = state.totalPoints % 1000;
+  const pointsForNextLevel = 1000;
   const progressPercentage = (pointsInCurrentLevel / pointsForNextLevel) * 100;
 
-  // Today's data from practice_logs
+  // Calculate today's practice minutes
   const today = new Date().toISOString().split('T')[0];
-  const todayLogs = state.practicesLogs.filter(log => {
-    const logDate = log.date.includes('T') ? log.date.split('T')[0] : log.date;
-    return logDate === today;
-  });
+  const todayLogs = state.practicesLogs.filter(log => log.date === today);
   const todayMinutes = todayLogs.reduce((sum, log) => sum + log.minutes, 0);
 
-  // Get active challenge data (from server)
-  const activeChallenge = activeChallenges.length > 0 ? activeChallenges[0] : null;
-  
-  // Helper function to get challenge description based on type
-  const getChallengeDescription = (challenge: ActiveChallenge | null) => {
-    if (!challenge) return '';
-    
-    if (challenge.type === 'days_in_period') {
-      return `این هفته ${toPersianDigits(challenge.targetDays.toString())} روز تمرین کنید`;
-    } else if (challenge.type === 'streak') {
-      return `${toPersianDigits(challenge.targetDays.toString())} روز پشت سر هم تمرین کنید`;
+  // Mock weekly challenge data
+  const weeklyGoal = 5; // 5 practice sessions per week
+  const weeklyProgress = 3; // completed sessions
+  const weeklyPercentage = (weeklyProgress / weeklyGoal) * 100;
+
+  // Mock notifications data with subscription prompt for non-subscribers  
+  const baseNotifications = [
+    {
+      id: '2',
+      title: '⏰ یادآوری تمرین',
+      message: 'وقت تمرین امروز شما فرا رسیده است',
+      time: '۴ ساعت پیش',
+      type: 'reminder',
+      read: notificationStates['2'] || false
+    },
+    {
+      id: '3',
+      title: '🏆 رتبه‌بندی هفتگی',
+      message: 'شما در لیگ هفتگی رتبه ۳ را کسب کردید',
+      time: '۱ روز پیش',
+      type: 'league',
+      read: notificationStates['3'] || true
+    },
+    {
+      id: '4',
+      title: '🎁 جایزه ویژه',
+      message: 'یک تخفیف ۲۰٪ برای خرید دوره جدید',
+      time: '۲ روز پیش',
+      type: 'promotion',
+      read: notificationStates['4'] || true
     }
-    return 'به چالش بپیوندید';
+  ];
+
+  // Add subscription notification for non-subscribers
+  const notifications = state.hasActiveSubscription 
+    ? [
+        {
+          id: '1',
+          title: '🎉 دستاورد جدید!',
+          message: 'شما نشان "تمرین ۷ روزه" را کسب کردید',
+          time: '۲ ساعت پیش',
+          type: 'achievement',
+          read: notificationStates['1'] || false
+        },
+        ...baseNotifications
+      ]
+    : [
+        {
+          id: 'subscription',
+          title: '🔔 اشتراک دوسل',
+          message: 'برای استفاده از امکانات کامل اپلیکیشن، اشتراک تهیه کنید',
+          time: 'الان',
+          type: 'subscription',
+          read: notificationStates['subscription'] || false
+        },
+        ...baseNotifications
+      ];
+
+  // Mark notification as read
+  const markNotificationAsRead = (notificationId: string) => {
+    const newStates = { ...notificationStates, [notificationId]: true };
+    setNotificationStates(newStates);
+    localStorage.setItem('doosell_notification_read_states', JSON.stringify(newStates));
   };
+
+  const unreadCount = notifications.filter(n => !n.read).length;
 
   const getNotificationIcon = (type: string) => {
     switch (type) {
-      case 'practice_logged':
-        return { icon: <Clock className="w-4 h-4 text-blue-600" />, bgColor: 'bg-blue-50' };
-      case 'challenge_completed':
-        return { icon: <Trophy className="w-4 h-4 text-yellow-600" />, bgColor: 'bg-yellow-50' };
-      case 'league_start':
-        return { icon: <Target className="w-4 h-4 text-purple-600" />, bgColor: 'bg-purple-50' };
-      case 'league_end':
-        return { icon: <Trophy className="w-4 h-4 text-green-600" />, bgColor: 'bg-green-50' };
-      case 'practice_reminder':
-        return { icon: <Bell className="w-4 h-4 text-blue-600" />, bgColor: 'bg-blue-50' };
-      case 'challenge_start':
-      case 'challenge_midweek':
-      case 'challenge_end':
-        return { icon: <Target className="w-4 h-4 text-purple-600" />, bgColor: 'bg-purple-50' };
-      case 'subscription_expiring':
-      case 'subscription_expired':
-        return { icon: <Zap className="w-4 h-4 text-orange-600" />, bgColor: 'bg-orange-50' };
-      case 'invite_reward':
-        return { icon: <Gift className="w-4 h-4 text-yellow-600" />, bgColor: 'bg-yellow-50' };
+      case 'achievement':
+        return <Trophy className="w-4 h-4 text-yellow-600" />;
+      case 'reminder':
+        return <Clock className="w-4 h-4 text-blue-600" />;
+      case 'league':
+        return <Award className="w-4 h-4 text-purple-600" />;
+      case 'promotion':
+        return <Gift className="w-4 h-4 text-green-600" />;
+      case 'subscription':
+        return <Zap className="w-4 h-4 text-orange-600" />;
       default:
-        return { icon: <Bell className="w-4 h-4 text-gray-600" />, bgColor: 'bg-gray-50' };
+        return <Bell className="w-4 h-4 text-gray-600" />;
     }
   };
 
-  const getNotificationMessage = (notification: any) => {
-    const { type, payload } = notification;
+  const handleNotificationClick = (notification: typeof notifications[0]) => {
+    // Mark notification as read when clicked
+    markNotificationAsRead(notification.id);
     
-    switch (type) {
-      case 'practice_logged':
-        return `✅ تمرین ثبت شد | ${toPersianDigits(payload?.minutes?.toString() || '0')} دقیقه و ${toPersianDigits(payload?.xp_gained?.toString() || '0')} امتیاز`;
-      case 'challenge_completed':
-        return `🏅 ${payload?.message || 'چالش کامل شد'}`;
-      case 'league_start':
-        return '🎯 لیگ جدید شروع شد!';
-      case 'league_end':
-        return payload?.rank ? `🏆 لیگ به پایان رسید | رتبه ${toPersianDigits(payload.rank.toString())}` : '🏆 لیگ به پایان رسید';
-      case 'practice_reminder':
-        return '⏰ یادآوری تمرین امروز';
-      case 'challenge_start':
-        return `🚀 چالش جدید شروع شد | ${payload?.challenge_title || ''}`;
-      case 'challenge_midweek':
-        return `💪 نیمه چالش | ${payload?.challenge_title || ''}`;
-      case 'challenge_end':
-        return `🎁 چالش به پایان رسید | ${payload?.challenge_title || ''}`;
-      case 'subscription_expiring':
-        return `⚠️ اشتراک شما ${toPersianDigits(payload?.days_left?.toString() || '0')} روز دیگر منقضی می‌شود`;
-      case 'subscription_expired':
-        return '❌ اشتراک شما منقضی شد';
-      case 'invite_reward':
-        return '🎉 پاداش دعوت دریافت شد';
-      default:
-        return payload?.message || 'اعلان جدید';
-    }
-  };
-
-  const formatNotificationTime = (createdAt: string) => {
-    const now = new Date();
-    const created = new Date(createdAt);
-    const diffMs = now.getTime() - created.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
-
-    if (diffMins < 1) return 'همین الان';
-    if (diffMins < 60) return `${toPersianDigits(diffMins.toString())} دقیقه پیش`;
-    if (diffHours < 24) return `${toPersianDigits(diffHours.toString())} ساعت پیش`;
-    if (diffDays < 7) return `${toPersianDigits(diffDays.toString())} روز پیش`;
-    return 'بیش از یک هفته پیش';
-  };
-
-  const handleMarkAsRead = async (id: string) => {
-    // Optimistic update
-    setNotifications((prev) =>
-      prev.map((notif) =>
-        notif.id === id ? { ...notif, read_at: new Date().toISOString() } : notif
-      )
-    );
-    
-    // Update in database
-    const success = await markNotificationAsRead(id);
-    if (!success) {
-      // Revert on failure
-      setNotifications((prev) =>
-        prev.map((notif) =>
-          notif.id === id ? { ...notif, read_at: null } : notif
-        )
-      );
-    }
-  };
-
-  const handleNotificationClick = (notification: any) => {
-    handleMarkAsRead(notification.id);
-    
-    const { type } = notification;
-    if (type === 'challenge_completed' || type === 'challenge_start' || type === 'challenge_midweek' || type === 'challenge_end') {
-      navigate('challenges');
-    } else if (type === 'league_start' || type === 'league_end') {
-      navigate('weekly-league');
-    } else if (type === 'practice_logged' || type === 'practice_reminder') {
-      navigate('practice-log');
-    } else if (type === 'subscription_expiring' || type === 'subscription_expired') {
+    // Handle specific notification actions
+    if (notification.type === 'subscription') {
       navigate('subscription');
+      setNotificationOpen(false);
     }
-    setNotificationOpen(false);
   };
-
-  const unreadCount = notifications.filter((n) => !n.read_at).length;
-
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 via-amber-50 to-yellow-50 pb-20">
@@ -314,50 +186,42 @@ const DashboardScreen = () => {
                   </p>
                 </div>
                 <div className="max-h-80 overflow-y-auto">
-                  {isLoadingNotifications ? (
-                    <div className="py-8 text-center text-gray-500 text-sm">
-                      در حال بارگذاری...
-                    </div>
-                  ) : notifications.length === 0 ? (
-                    <div className="py-8 text-center text-gray-500 text-sm">
-                      اعلانی وجود ندارد
-                    </div>
-                  ) : (
-                    notifications.map((notification) => {
-                      const { icon, bgColor } = getNotificationIcon(notification.type);
-                      const message = getNotificationMessage(notification);
-                      const time = formatNotificationTime(notification.created_at);
-                      
-                      return (
-                        <div
-                          key={notification.id}
-                          className={`p-4 border-b hover:bg-gray-50 cursor-pointer ${
-                            !notification.read_at ? 'bg-blue-50/50' : ''
-                          }`}
-                          onClick={() => handleNotificationClick(notification)}
-                        >
-                          <div className="flex items-start gap-3">
-                            <div className={`p-2 rounded-lg ${bgColor}`}>
-                              {icon}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex justify-between items-start mb-1">
-                                <p className={`text-sm ${!notification.read_at ? 'font-medium text-gray-800' : 'text-gray-600'}`}>
-                                  {message}
-                                </p>
-                                {!notification.read_at && (
-                                  <div className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0 mt-1"></div>
-                                )}
-                              </div>
-                              <p className="text-xs text-gray-400">
-                                {time}
-                              </p>
-                            </div>
-                          </div>
+                  {notifications.map((notification) => (
+                    <div
+                      key={notification.id}
+                      className={`p-4 border-b hover:bg-gray-50 cursor-pointer ${
+                        !notification.read ? 'bg-blue-50/50' : ''
+                      }`}
+                      onClick={() => handleNotificationClick(notification)}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="mt-1">
+                          {getNotificationIcon(notification.type)}
                         </div>
-                      );
-                    })
-                  )}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex justify-between items-start mb-1">
+                            <h4 className="text-sm text-gray-800 truncate">
+                              {notification.title}
+                            </h4>
+                            {!notification.read && (
+                              <div className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0 mt-1"></div>
+                            )}
+                          </div>
+                          <p className="text-xs text-gray-600 leading-relaxed mb-2">
+                            {notification.message}
+                          </p>
+                          <p className="text-xs text-gray-400">
+                            {notification.time}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="p-3 text-center border-t">
+                  <Button variant="ghost" size="sm" className="text-orange-600 hover:text-orange-700">
+                    مشاهده همه اعلان‌ها
+                  </Button>
                 </div>
               </PopoverContent>
             </Popover>
@@ -490,7 +354,7 @@ const DashboardScreen = () => {
               <Progress value={progressPercentage} className="h-3 mb-3" />
               
               <p className="text-center text-sm text-gray-500">
-                {formatPersianNumber(100 - pointsInCurrentLevel)} امتیاز تا سطح بعدی
+                {formatPersianNumber(1000 - pointsInCurrentLevel)} امتیاز تا سطح بعدی
               </p>
             </CardContent>
           </Card>
@@ -516,80 +380,32 @@ const DashboardScreen = () => {
           </CardContent>
         </Card>
 
-        {/* Active Challenge - Only for subscribers */}
+        {/* Weekly Challenge - Only for subscribers */}
         {state.hasActiveSubscription ? (
-          activeChallenge ? (
-            <Card className={`rounded-2xl shadow-sm border-0 ${
-              activeChallenge.isCompleted 
-                ? 'bg-gradient-to-br from-green-50 to-emerald-50' 
-                : 'bg-gradient-to-br from-blue-50 to-indigo-50'
-            }`}>
-              <CardContent className="p-6">
-                <div className="flex justify-between items-center mb-4">
-                  <div>
-                    <h3 className={`text-lg ${
-                      activeChallenge.isCompleted ? 'text-green-800' : 'text-blue-800'
-                    }`}>
-                      {activeChallenge.title}
-                    </h3>
-                    <p className={`text-sm ${
-                      activeChallenge.isCompleted ? 'text-green-600' : 'text-blue-600'
-                    }`}>
-                      {getChallengeDescription(activeChallenge)}
-                    </p>
-                  </div>
-                  <div className="text-left">
-                    <p className={`text-2xl ${
-                      activeChallenge.isCompleted ? 'text-green-800' : 'text-blue-800'
-                    }`}>
-                      {toPersianDigits(activeChallenge.daysDone.toString())}/{toPersianDigits(activeChallenge.targetDays.toString())}
-                    </p>
-                    {activeChallenge.isCompleted && (
-                      <p className="text-xs text-green-600">✓ تکمیل شد</p>
-                    )}
-                  </div>
+          <Card className="rounded-2xl shadow-sm border-0 bg-gradient-to-br from-blue-50 to-indigo-50">
+            <CardContent className="p-6">
+              <div className="flex justify-between items-center mb-4">
+                <div>
+                  <h3 className="text-lg text-blue-800">چالش هفتگی</h3>
+                  <p className="text-sm text-blue-600">تمرین {toPersianDigits('5')} روز هفته</p>
                 </div>
-                
-                <Progress 
-                  value={(activeChallenge.daysDone / activeChallenge.targetDays) * 100} 
-                  className="h-3 mb-3" 
-                />
-                
-                <Button
-                  onClick={() => navigate('challenges')}
-                  variant="outline"
-                  className={`w-full rounded-xl ${
-                    activeChallenge.isCompleted
-                      ? 'border-green-300 text-green-700 hover:bg-green-50'
-                      : 'border-blue-300 text-blue-700 hover:bg-blue-50'
-                  }`}
-                >
-                  مشاهده همه چالش‌ها
-                </Button>
-              </CardContent>
-            </Card>
-          ) : (
-            <Card className="rounded-2xl shadow-sm border-0 bg-gradient-to-br from-gray-50 to-gray-100">
-              <CardContent className="p-6">
-                <div className="flex justify-between items-center mb-4">
-                  <div>
-                    <h3 className="text-lg text-gray-600">چالش فعال</h3>
-                    <p className="text-sm text-gray-500">هیچ چالش فعالی وجود ندارد</p>
-                  </div>
+                <div className="text-left">
+                  <p className="text-2xl text-blue-800">{toPersianDigits(weeklyProgress.toString())}/{toPersianDigits(weeklyGoal.toString())}</p>
+                  <p className="text-xs text-blue-600">این هفته {toPersianDigits('5')} روز تمرین کنید</p>
                 </div>
-                
-                <div className="h-3 bg-gray-200 rounded-full mb-3"></div>
-                
-                <Button
-                  onClick={() => navigate('challenges')}
-                  variant="outline"
-                  className="w-full rounded-xl border-gray-300 text-gray-600 hover:bg-gray-50"
-                >
-                  مشاهده چالش‌ها
-                </Button>
-              </CardContent>
-            </Card>
-          )
+              </div>
+              
+              <Progress value={weeklyPercentage} className="h-3 mb-3" />
+              
+              <Button
+                onClick={() => navigate('challenges')}
+                variant="outline"
+                className="w-full rounded-xl border-blue-300 text-blue-700 hover:bg-blue-50"
+              >
+                مشاهده همه چالش‌ها
+              </Button>
+            </CardContent>
+          </Card>
         ) : (
           <Card className="rounded-2xl shadow-sm border-0 bg-gradient-to-br from-gray-50 to-gray-100 opacity-70">
             <CardContent className="p-6">

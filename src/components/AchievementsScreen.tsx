@@ -1,100 +1,66 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Progress } from './ui/progress';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { useApp } from '../App';
-import { Star, Flame, Trophy, Users, TrendingUp, Lock, ShoppingBag, Loader2 } from 'lucide-react';
+import { Star, Flame, Trophy, Users, TrendingUp, Lock, ShoppingBag } from 'lucide-react';
 import { formatPersianNumber, toPersianDigits } from './utils/persianUtils';
-import { getAchievements } from '../services/backend';
-import type { AchievementsResponse, AchievementBadge } from '../types/backend';
 
 const AchievementsScreen = () => {
   const { state, navigate } = useApp();
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [achievements, setAchievements] = useState<AchievementsResponse | null>(null);
 
-  useEffect(() => {
-    loadAchievements();
-  }, []);
-
-  const loadAchievements = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const data = await getAchievements();
-      
-      if (data.ok) {
-        setAchievements(data);
-      } else {
-        setError(data.error || 'خطا در بارگذاری دستاوردها');
-      }
-    } catch (error: any) {
-      console.error('Failed to load achievements:', error);
-      setError('خطا در بارگذاری دستاوردها');
-    } finally {
-      setLoading(false);
+  // Level calculation
+  const calculateLevelRequirements = () => {
+    const levels = [{ level: 1, required: 0 }];
+    for (let i = 2; i <= 20; i++) {
+      const required = levels[i - 2].required + 100 + (i * 50);
+      levels.push({ level: i, required });
     }
+    return levels;
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-orange-50 via-amber-50 to-yellow-50 flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
-      </div>
-    );
-  }
+  const levels = calculateLevelRequirements();
+  const currentLevel = levels.find(l => state.totalPoints < l.required) || levels[levels.length - 1];
+  const currentLevelIndex = currentLevel.level - 1;
+  const prevLevel = levels[Math.max(0, currentLevelIndex - 1)];
+  const nextLevel = levels[Math.min(levels.length - 1, currentLevelIndex)];
+  
+  const progressInLevel = state.totalPoints - prevLevel.required;
+  const pointsNeededForNextLevel = nextLevel.required - state.totalPoints;
+  const levelProgress = (progressInLevel / (nextLevel.required - prevLevel.required)) * 100;
 
-  if (!achievements || !achievements.ok || error) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-orange-50 via-amber-50 to-yellow-50 flex items-center justify-center p-6">
-        <Card className="max-w-md">
-          <CardContent className="p-6 text-center">
-            <p className="text-gray-600 mb-4">{error || 'خطا در بارگذاری دستاوردها'}</p>
-            <Button onClick={loadAchievements}>تلاش مجدد</Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  const level = achievements.level || { current: 1, xpTotal: 0, xpForNextLevel: 500, progressPercent: 0 };
-  const streak = achievements.streak || { current: 0, best: 0 };
-  const badges = achievements.badges || [];
-  const earnedBadgesCount = badges.length;
-
-  // Mock medals data for display structure
+  // Mock medals data
   const medalCategories = [
     {
       id: 'points',
       title: 'امتیاز',
       medals: [
-        { id: 1, title: 'شروع خوب', requirement: 100, points: 100, earned: level.xpTotal >= 100 },
-        { id: 2, title: 'پیشرفت عالی', requirement: 500, points: 500, earned: level.xpTotal >= 500 },
-        { id: 3, title: 'حرفه‌ای', requirement: 1000, points: 1000, earned: level.xpTotal >= 1000 },
-        { id: 4, title: 'استاد', requirement: 2000, points: 2000, earned: level.xpTotal >= 2000 },
-        { id: 5, title: 'افسانه', requirement: 5000, points: 5000, earned: level.xpTotal >= 5000 },
+        { id: 1, title: 'شروع خوب', requirement: 100, points: 100, earned: state.totalPoints >= 100 },
+        { id: 2, title: 'پیشرفت عالی', requirement: 500, points: 500, earned: state.totalPoints >= 500 },
+        { id: 3, title: 'حرفه‌ای', requirement: 1000, points: 1000, earned: state.totalPoints >= 1000 },
+        { id: 4, title: 'استاد', requirement: 2000, points: 2000, earned: state.totalPoints >= 2000 },
+        { id: 5, title: 'افسانه', requirement: 5000, points: 5000, earned: state.totalPoints >= 5000 },
       ]
     },
     {
       id: 'streak',
       title: 'استمرار',
       medals: [
-        { id: 11, title: 'شروع استمرار', requirement: 5, points: 5, earned: streak.best >= 5 },
-        { id: 12, title: 'هفته کامل', requirement: 7, points: 7, earned: streak.best >= 7 },
-        { id: 13, title: 'استمرار قوی', requirement: 14, points: 14, earned: streak.best >= 14 },
-        { id: 14, title: 'یک ماه', requirement: 30, points: 30, earned: streak.best >= 30 },
-        { id: 15, title: 'بی‌وقفه', requirement: 60, points: 60, earned: streak.best >= 60 },
+        { id: 11, title: 'شروع استمرار', requirement: 5, points: 5, earned: state.streak >= 5 },
+        { id: 12, title: 'هفته کامل', requirement: 7, points: 7, earned: state.streak >= 7 },
+        { id: 13, title: 'استمرار قوی', requirement: 14, points: 14, earned: state.streak >= 14 },
+        { id: 14, title: 'یک ماه', requirement: 30, points: 30, earned: state.streak >= 30 },
+        { id: 15, title: 'بی‌وقفه', requirement: 60, points: 60, earned: state.streak >= 60 },
       ]
     },
     {
       id: 'league',
       title: 'لیگ',
       medals: [
-        { id: 31, title: 'مدال طلا', requirement: 'رتبه اول لیگ', earned: badges.some(b => b.code === 'league-first') },
-        { id: 32, title: 'مدال نقره', requirement: 'رتبه دوم لیگ', earned: badges.some(b => b.code === 'league-second') },
-        { id: 33, title: 'مدال برنز', requirement: 'رتبه سوم لیگ', earned: badges.some(b => b.code === 'league-third') },
+        { id: 31, title: 'مدال طلا', requirement: 'رتبه اول لیگ', earned: false },
+        { id: 32, title: 'مدال نقره', requirement: 'رتبه دوم لیگ', earned: false },
+        { id: 33, title: 'مدال برنز', requirement: 'رتبه سوم لیگ', earned: false },
       ]
     }
   ];
@@ -129,26 +95,26 @@ const AchievementsScreen = () => {
             <CardContent className="space-y-4">
               <div className="text-center">
                 <div className="w-20 h-20 mx-auto bg-gradient-to-br from-amber-400 to-yellow-400 rounded-full flex items-center justify-center mb-3 shadow-lg">
-                  <span className="text-white text-2xl">{toPersianDigits(level.current.toString())}</span>
+                  <span className="text-white text-2xl">{toPersianDigits((currentLevel.level - 1).toString())}</span>
                 </div>
-                <h3 className="text-xl mb-1">سطح {toPersianDigits(level.current.toString())}</h3>
+                <h3 className="text-xl mb-1">سطح {toPersianDigits((currentLevel.level - 1).toString())}</h3>
                 <p className="text-sm text-gray-600">
-                  {level.xpForNextLevel > level.xpTotal ? 
-                    `${formatPersianNumber(level.xpForNextLevel - level.xpTotal)} امتیاز تا سطح بعد` : 
+                  {pointsNeededForNextLevel > 0 ? 
+                    `${formatPersianNumber(pointsNeededForNextLevel)} امتیاز تا سطح بعد` : 
                     'حداکثر سطح!'
                   }
                 </p>
               </div>
               
-              {level.xpForNextLevel > level.xpTotal && (
+              {pointsNeededForNextLevel > 0 && (
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-sm text-gray-600">پیشرفت</span>
                     <span className="text-sm text-gray-900">
-                      {formatPersianNumber(level.xpTotal)} / {formatPersianNumber(level.xpForNextLevel)} امتیاز
+                      {formatPersianNumber(state.totalPoints)} / {formatPersianNumber(nextLevel.required)} امتیاز
                     </span>
                   </div>
-                  <Progress value={level.progressPercent} className="h-3" />
+                  <Progress value={levelProgress} className="h-3" />
                 </div>
               )}
             </CardContent>
@@ -164,11 +130,11 @@ const AchievementsScreen = () => {
                   </div>
                   <div>
                     <h3 className="text-base">استمرار</h3>
-                    <p className="text-sm text-gray-600">{formatPersianNumber(streak.current)} روز متوالی</p>
+                    <p className="text-sm text-gray-600">{formatPersianNumber(state.streak)} روز متوالی</p>
                   </div>
                 </div>
                 <Badge variant="secondary" className="bg-red-100 text-red-700">
-                  {formatPersianNumber(streak.current)} روز
+                  {formatPersianNumber(state.streak)} روز
                 </Badge>
               </div>
             </CardContent>

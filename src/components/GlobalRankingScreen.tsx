@@ -1,10 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { useApp } from '../App';
-import { ArrowRight, Trophy, Crown, Star, TrendingUp, Lock, ShoppingBag, Loader2 } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
+import { ArrowRight, Trophy, Crown, Star, TrendingUp } from 'lucide-react';
 
 interface GlobalPlayer {
   id: string;
@@ -15,63 +14,48 @@ interface GlobalPlayer {
   isCurrentUser?: boolean;
 }
 
-interface RankingData {
-  ok: boolean;
-  userRank: number;
-  userXp: number;
-  totalUsers: number;
-  topThree: GlobalPlayer[];
-  surrounding: GlobalPlayer[];
-}
-
 const GlobalRankingScreen = () => {
   const { state, navigate } = useApp();
-  const [rankingData, setRankingData] = useState<RankingData | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const fetchRanking = async () => {
-      try {
-        setIsLoading(true);
-        setError(null);
+  // Mock global ranking data - complete list for positioning
+  const allGlobalPlayers: GlobalPlayer[] = [
+    { id: '1', name: 'سارا احمدی', instrument: 'پیانو', totalPoints: 2450, rank: 1 },
+    { id: '2', name: 'محمد رضایی', instrument: 'ویولن', totalPoints: 2380, rank: 2 },
+    { id: '3', name: 'مریم کریمی', instrument: 'سنتور', totalPoints: 2350, rank: 3 },
+    { id: '4', name: 'علی محمدی', instrument: 'گیتار', totalPoints: 2320, rank: 4 },
+    { id: '5', name: 'زهرا نوری', instrument: 'تار', totalPoints: 2290, rank: 5 },
+    { id: '6', name: 'حسین یوسفی', instrument: 'کمانچه', totalPoints: 2260, rank: 6 },
+    { id: '7', name: 'فاطمه حسینی', instrument: 'عود', totalPoints: 2230, rank: 7 },
+    { id: '8', name: 'رضا ملکی', instrument: 'پیانو', totalPoints: 2200, rank: 8 },
+    { id: '9', name: 'آریا جعفری', instrument: 'ویولن', totalPoints: 2170, rank: 9 },
+    { id: '10', name: 'نگار صادقی', instrument: 'سنتور', totalPoints: 2140, rank: 10 },
+    // Generate more players around current user
+    { id: '154', name: 'پریسا مرادی', instrument: 'گیتار', totalPoints: state.totalPoints + 40, rank: 154 },
+    { id: '155', name: 'امید کریمی', instrument: 'پیانو', totalPoints: state.totalPoints + 20, rank: 155 },
+    { id: state.user?.id || '156', name: `${state.user?.firstName || 'کاربر'} ${state.user?.lastName || 'گرامی'}`, instrument: state.user?.instrument || 'پیانو', totalPoints: state.totalPoints, rank: 156, isCurrentUser: true },
+    { id: '157', name: 'سمیرا حسینی', instrument: 'ویولن', totalPoints: Math.max(0, state.totalPoints - 20), rank: 157 },
+    { id: '158', name: 'داود رضایی', instrument: 'سنتور', totalPoints: Math.max(0, state.totalPoints - 40), rank: 158 },
+    // Bottom players
+    { id: '2348', name: 'آرمان قاسمی', instrument: 'گیتار', totalPoints: 45, rank: 2348 },
+    { id: '2349', name: 'لیلا حکیمی', instrument: 'پیانو', totalPoints: 30, rank: 2349 },
+    { id: '2350', name: 'امیر توکلی', instrument: 'ویولن', totalPoints: 15, rank: 2350 },
+  ];
 
-        // Get current session for authorization
-        const { data: { session } } = await supabase.auth.getSession();
-        
-        if (!session) {
-          throw new Error('لطفاً ابتدا وارد شوید');
-        }
+  // Get current user and surrounding players
+  const currentUserIndex = allGlobalPlayers.findIndex(player => player.isCurrentUser);
+  const currentUser = allGlobalPlayers[currentUserIndex];
+  
+  // Get players around current user (2 above, current user, 2 below)
+  const surroundingPlayers = allGlobalPlayers.slice(
+    Math.max(0, currentUserIndex - 2), 
+    Math.min(allGlobalPlayers.length, currentUserIndex + 3)
+  );
 
-        const { data, error: fnError } = await supabase.functions.invoke('get-global-ranking', {
-          headers: {
-            Authorization: `Bearer ${session.access_token}`
-          }
-        });
+  const totalUsers = 2350;
+  const userRank = currentUser?.rank || 1;
+  const userPercentile = Math.round(((totalUsers - userRank) / totalUsers) * 100);
 
-        if (fnError) throw fnError;
-        if (!data?.ok) throw new Error(data?.error || 'Failed to fetch ranking');
-
-        setRankingData(data);
-      } catch (err) {
-        console.error('Error fetching global ranking:', err);
-        setError(err instanceof Error ? err.message : 'خطا در دریافت رتبه‌بندی');
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchRanking();
-  }, [state.totalPoints]); // Refetch when XP changes
-
-  // Calculate percentile
-  const userPercentile = rankingData 
-    ? Math.round(((rankingData.totalUsers - rankingData.userRank) / rankingData.totalUsers) * 100)
-    : 0;
-
-  const topThree = rankingData?.topThree || [];
-  const surroundingPlayers = rankingData?.surrounding || [];
-  const currentUser = surroundingPlayers.find(p => p.isCurrentUser);
+  const topThree = allGlobalPlayers.slice(0, 3);
 
   const getRankIcon = (rank: number) => {
     switch (rank) {
@@ -135,40 +119,8 @@ const GlobalRankingScreen = () => {
         </div>
       </div>
 
-      {/* Content with conditional blur */}
-      <div className="relative">
-        <div className={`p-6 space-y-6 ${!state.hasActiveSubscription ? 'blur-sm pointer-events-none' : ''}`}>
-        
-        {/* Loading State */}
-        {isLoading && (
-          <Card className="rounded-2xl shadow-sm">
-            <CardContent className="p-8 flex flex-col items-center justify-center">
-              <Loader2 className="w-8 h-8 text-orange-500 animate-spin mb-4" />
-              <p className="text-gray-600">در حال بارگذاری رتبه‌بندی...</p>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Error State */}
-        {error && !isLoading && (
-          <Card className="rounded-2xl shadow-sm bg-red-50 border-red-200">
-            <CardContent className="p-4">
-              <div className="text-center">
-                <p className="text-red-700">{error}</p>
-                <Button
-                  onClick={() => window.location.reload()}
-                  className="mt-4 bg-red-600 hover:bg-red-700 text-white"
-                >
-                  تلاش مجدد
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
+      <div className="p-6 space-y-6">
         {/* User Status */}
-        {!isLoading && !error && rankingData && (
-          <>
         {currentUser ? (
           <Card className="rounded-2xl shadow-sm bg-gradient-to-br from-amber-50 to-yellow-50 border-amber-200">
             <CardContent className="p-4">
@@ -176,28 +128,21 @@ const GlobalRankingScreen = () => {
                 <h4 className="text-amber-800 mb-3">موقعیت شما در رتبه‌بندی کلی</h4>
                 <div className="grid grid-cols-3 gap-4">
                   <div className="text-center">
-                    <div className="text-lg text-amber-700">{rankingData.userRank.toLocaleString('fa-IR')}</div>
+                    <div className="text-lg text-amber-700">{userRank}</div>
                     <div className="text-xs text-amber-600">رتبه کلی</div>
                   </div>
                   <div className="text-center">
-                    <div className="text-lg text-amber-700">{rankingData.userXp.toLocaleString('fa-IR')}</div>
+                    <div className="text-lg text-amber-700">{currentUser.totalPoints}</div>
                     <div className="text-xs text-amber-600">امتیاز کل</div>
                   </div>
                   <div className="text-center">
-                    <div className="text-lg text-amber-700">{userPercentile.toLocaleString('fa-IR')}%</div>
+                    <div className="text-lg text-amber-700">{userPercentile}%</div>
                     <div className="text-xs text-amber-600">بهتر از</div>
                   </div>
                 </div>
                 <p className="text-amber-700 text-sm mt-2">
-                  {userPercentile > 0 
-                    ? `شما بالاتر از ${userPercentile.toLocaleString('fa-IR')}% کاربران هستید` 
-                    : 'با تمرین بیشتر رتبه خود را ارتقا دهید!'}
+                  شما بالاتر از {userPercentile}% کاربران هستید
                 </p>
-                {rankingData.userRank > 1 && (
-                  <p className="text-amber-600 text-xs mt-1">
-                    💪 فقط {(rankingData.userRank - 1).toLocaleString('fa-IR')} پله تا رتبه اول!
-                  </p>
-                )}
               </div>
             </CardContent>
           </Card>
@@ -257,7 +202,7 @@ const GlobalRankingScreen = () => {
         </Card>
 
         {/* Current User and Surrounding Players */}
-        {surroundingPlayers.length > 0 && (
+        {currentUser && currentUser.rank > 3 && (
           <Card className="rounded-2xl shadow-sm">
             <CardHeader>
               <CardTitle className="text-base">موقعیت شما</CardTitle>
@@ -322,33 +267,6 @@ const GlobalRankingScreen = () => {
             </div>
           </CardContent>
         </Card>
-        </>
-        )}
-        </div>
-
-        {/* Overlay for non-subscribers */}
-        {!state.hasActiveSubscription && (
-          <div className="fixed inset-0 flex items-center justify-center z-50">
-            <Card className="rounded-2xl shadow-lg border-0 bg-gradient-to-br from-orange-50 to-amber-50 max-w-sm mx-4">
-              <CardContent className="p-8 text-center">
-                <div className="w-20 h-20 mx-auto bg-gradient-to-br from-orange-200 to-amber-200 rounded-2xl flex items-center justify-center mb-6">
-                  <Lock className="w-10 h-10 text-orange-600" />
-                </div>
-                <h3 className="text-xl mb-4 text-gray-800">دسترسی محدود</h3>
-                <p className="text-gray-600 mb-6 leading-relaxed">
-                  برای مشاهده رتبه‌بندی جهانی و موقعیت خود در بین تمام کاربران، نیاز به اشتراک دارید.
-                </p>
-                <Button
-                  onClick={() => navigate('subscription')}
-                  className="w-full bg-gradient-to-r from-orange-400 to-amber-400 hover:from-orange-500 hover:to-amber-500 text-white rounded-xl h-12 shadow-lg"
-                >
-                  <ShoppingBag className="w-5 h-5 ml-2" />
-                  خرید اشتراک
-                </Button>
-              </CardContent>
-            </Card>
-          </div>
-        )}
       </div>
     </div>
   );
