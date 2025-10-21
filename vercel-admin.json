@@ -1,0 +1,12 @@
+{
+  "buildCommand": "cd admin && npm install && npm run build",
+  "outputDirectory": "admin/build",
+  "installCommand": "npm install --prefix admin",
+  "framework": "vite",
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}

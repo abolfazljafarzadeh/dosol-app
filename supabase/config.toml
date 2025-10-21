@@ -1,0 +1,103 @@
+project_id = "dbogjyuqeereyeqybwrj"
+
+[functions.admin-get-section-data]
+verify_jwt = true
+
+[functions.ask-metis-question]
+verify_jwt = true
+
+[functions.request-otp]
+verify_jwt = false
+
+[functions.send-otp]
+verify_jwt = false
+
+[functions.verify-otp]
+verify_jwt = false
+
+[functions.activate-premium-test]
+verify_jwt = true
+
+[functions.register-user]
+verify_jwt = true
+
+[functions.open-weekly-league]
+verify_jwt = false
+
+[functions.close-weekly-league]
+verify_jwt = false
+
+[functions.schedule-push-reminders]
+verify_jwt = false
+
+[functions.on-league-start]
+verify_jwt = false
+
+[functions.on-league-end]
+verify_jwt = false
+
+[functions.challenge-notifier]
+verify_jwt = false
+
+[functions.subscription-checker]
+verify_jwt = false
+
+[functions.on-invite-reward]
+verify_jwt = false
+
+[functions.save-training-plan]
+verify_jwt = true
+
+[functions.create-order]
+verify_jwt = true
+
+[functions.verify-payment]
+verify_jwt = true
+
+[functions.webhook-payment-confirm]
+verify_jwt = false
+
+[functions.start-checkout]
+verify_jwt = true
+
+[functions.confirm-checkout]
+verify_jwt = true
+
+[functions.start-checkout-course]
+verify_jwt = true
+
+[functions.confirm-checkout-course]
+verify_jwt = true
+
+[functions.log-practice]
+verify_jwt = true
+
+[functions.get-dashboard]
+verify_jwt = true
+
+[functions.get-achievements]
+verify_jwt = true
+
+[functions.join-weekly-league]
+verify_jwt = true
+
+[functions.finalize-weekly-leagues]
+verify_jwt = false
+
+[functions.rollover-weekly-challenge]
+verify_jwt = false
+
+[functions.challenge-rollover-periodic]
+verify_jwt = false
+
+[functions.get-challenges-view]
+verify_jwt = true
+
+[functions.claim-challenge-reward]
+verify_jwt = true
+
+[functions.get-global-ranking]
+verify_jwt = true
+
+[functions.auto-join-weekly-leagues]
+verify_jwt = false
