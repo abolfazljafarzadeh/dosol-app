@@ -9,7 +9,6 @@ serve(async (req) => {
 
     const { phone_number } = await req.json()
 
-    // Validate phone number
     const phoneRegex = /^09\d{9}$/
     if (!phoneRegex.test(phone_number)) {
       return new Response(
@@ -18,21 +17,17 @@ serve(async (req) => {
       )
     }
 
-    // Generate 6-digit OTP
     const otp_code = Math.floor(100000 + Math.random() * 900000).toString()
 
-    // Set expiration time (5 minutes)
     const expires_at = new Date()
     expires_at.setMinutes(expires_at.getMinutes() + 5)
 
-    // Invalidate previous OTPs
     await supabase
       .from('otp_codes')
       .update({ is_used: true })
       .eq('phone_number', phone_number)
       .eq('is_used', false)
 
-    // Store OTP in database
     const { error: insertError } = await supabase
       .from('otp_codes')
       .insert({
@@ -45,19 +40,16 @@ serve(async (req) => {
       throw insertError
     }
 
-    // Send SMS via SMS provider API (example with Kavenegar)
     const smsApiKey = Deno.env.get('SMS_API_KEY')
     const smsApiUrl = `https://api.kavenegar.com/v1/${smsApiKey}/verify/lookup.json`
-    
+
     const smsResponse = await fetch(smsApiUrl, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded'
-      },
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
         receptor: phone_number,
         token: otp_code,
-        template: 'dosol-verify' // Template name in SMS provider
+        template: 'dosol-verify'
       })
     })
 
@@ -66,10 +58,7 @@ serve(async (req) => {
     }
 
     return new Response(
-      JSON.stringify({ 
-        success: true,
-        message: 'کد تایید ارسال شد'
-      }),
+      JSON.stringify({ success: true, message: 'کد تایید ارسال شد' }),
       { status: 200, headers: { 'Content-Type': 'application/json' } }
     )
 
