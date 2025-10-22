@@ -26,6 +26,117 @@ export interface UserStats {
   subscriptionExpiryDate: string | null;
 }
 
+// Check if user exists
+export const checkUserExists = async (phone: string): Promise<boolean> => {
+  try {
+    const response = await makeServerRequest('/check-user', {
+      method: 'POST',
+      body: JSON.stringify({ phone }),
+    });
+    
+    return response.exists;
+  } catch (error) {
+    console.error('Check user error:', error);
+    return false;
+  }
+};
+
+// Send OTP to phone number
+export const sendOTP = async (phone: string): Promise<{ success: boolean; message: string }> => {
+  // Mock implementation for development
+  console.log('📱 Mock OTP sent to:', phone);
+  console.log('🔐 Mock OTP Code: 123456');
+  
+  // Simulate network delay
+  await new Promise(resolve => setTimeout(resolve, 1000));
+  
+  return {
+    success: true,
+    message: "کد تأیید ارسال شد"
+  };
+};
+
+// Verify OTP
+export const verifyOTP = async (phone: string, otp: string): Promise<{ 
+  success: boolean; 
+  userExists: boolean;
+  user?: User;
+  stats?: UserStats;
+  practiceLogs?: PracticeLog[];
+  session?: any;
+}> => {
+  // Mock implementation for development
+  console.log('🔐 Verifying OTP:', otp, 'for phone:', phone);
+  
+  // Simulate network delay
+  await new Promise(resolve => setTimeout(resolve, 1500));
+  
+  // Accept demo OTP: 123456
+  if (otp !== '123456') {
+    return {
+      success: false,
+      userExists: false,
+      message: "کد تأیید نامعتبر است"
+    };
+  }
+  
+  // Check if it's a demo existing user (09123456789)
+  const isExistingUser = phone === '09123456789';
+  
+  if (isExistingUser) {
+    // Mock existing user data
+    const mockUser: User = {
+      id: 'demo-user-123',
+      firstName: 'علی',
+      lastName: 'موسوی',
+      phone: phone,
+      instrument: 'piano',
+      skillLevel: 'intermediate',
+      registeredAt: '2024-01-15T10:30:00Z'
+    };
+    
+    const mockStats: UserStats = {
+      totalPoints: 1250,
+      streak: 7,
+      level: 2,
+      hasActiveSubscription: true,
+      subscriptionExpiryDate: '2025-02-15T00:00:00Z'
+    };
+    
+    const mockLogs: PracticeLog[] = [
+      {
+        id: '1',
+        date: new Date().toISOString().split('T')[0],
+        minutes: 45,
+        notes: 'تمرین گام‌ها و آرپژ',
+        points: 30
+      },
+      {
+        id: '2',
+        date: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        minutes: 60,
+        notes: 'کار روی قطعه جدید',
+        points: 40
+      }
+    ];
+    
+    return {
+      success: true,
+      userExists: true,
+      user: mockUser,
+      stats: mockStats,
+      practiceLogs: mockLogs,
+      session: { user: mockUser, access_token: 'mock-token' }
+    };
+  } else {
+    // New user
+    return {
+      success: true,
+      userExists: false
+    };
+  }
+};
+
 // Auth functions
 export const registerUser = async (userData: {
   firstName: string;
@@ -34,23 +145,38 @@ export const registerUser = async (userData: {
   instrument: string;
   skillLevel: string;
 }): Promise<{ user: User; authUser: any; session?: any; stats?: UserStats; practiceLogs?: PracticeLog[]; userExists?: boolean }> => {
-  try {
-    const response = await makeServerRequest('/register', {
-      method: 'POST',
-      body: JSON.stringify(userData),
-    });
-    
-    return response;
-  } catch (error) {
-    console.error('Registration error:', error);
-    
-    // Check if it's a conflict (user exists) error
-    if (error.message?.includes('409') || error.message?.includes('Conflict')) {
-      throw new Error('User already exists');
-    }
-    
-    throw new Error(`Registration failed: ${error.message}`);
-  }
+  // Mock implementation for development
+  console.log('📝 Mock registering user:', userData);
+  
+  // Simulate network delay
+  await new Promise(resolve => setTimeout(resolve, 2000));
+  
+  const mockUser: User = {
+    id: `demo-user-${Date.now()}`,
+    firstName: userData.firstName,
+    lastName: userData.lastName,
+    phone: userData.phone,
+    instrument: userData.instrument,
+    skillLevel: userData.skillLevel,
+    registeredAt: new Date().toISOString()
+  };
+  
+  const mockStats: UserStats = {
+    totalPoints: 0,
+    streak: 0,
+    level: 1,
+    hasActiveSubscription: false,
+    subscriptionExpiryDate: null
+  };
+  
+  return {
+    user: mockUser,
+    authUser: mockUser,
+    session: { user: mockUser, access_token: 'mock-token' },
+    stats: mockStats,
+    practiceLogs: [],
+    userExists: false
+  };
 };
 
 export const loginUser = async (phone: string): Promise<{

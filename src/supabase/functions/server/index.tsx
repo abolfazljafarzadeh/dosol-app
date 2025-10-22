@@ -32,6 +32,170 @@ app.get("/make-server-80493cf3/health", (c) => {
   return c.json({ status: "ok" });
 });
 
+// Send OTP endpoint
+app.post("/make-server-80493cf3/send-otp", async (c) => {
+  try {
+    const body = await c.req.json();
+    const { phone } = body;
+    
+    if (!phone) {
+      return c.json({ error: "Phone number is required" }, 400);
+    }
+
+    // Generate 6-digit OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    
+    // Store OTP in KV with 5 minute expiry
+    const otpKey = `otp:${phone}`;
+    await kv.set(otpKey, {
+      code: otp,
+      phone,
+      createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString() // 5 minutes
+    });
+
+    // In production, you would send the OTP via SMS here
+    // For development, we'll just log it
+    console.log(`OTP for ${phone}: ${otp}`);
+    
+    return c.json({ 
+      success: true,
+      message: "OTP sent successfully"
+    });
+  } catch (error) {
+    console.error('Send OTP error:', error);
+    return c.json({ error: `Failed to send OTP: ${error.message}` }, 500);
+  }
+});
+
+// Verify OTP endpoint  
+app.post("/make-server-80493cf3/verify-otp", async (c) => {
+  try {
+    const body = await c.req.json();
+    const { phone, otp } = body;
+    
+    if (!phone || !otp) {
+      return c.json({ error: "Phone number and OTP are required" }, 400);
+    }
+
+    // Get stored OTP
+    const otpKey = `otp:${phone}`;
+    const storedOtpData = await kv.get(otpKey);
+    
+    if (!storedOtpData) {
+      return c.json({ 
+        success: false,
+        message: "OTP not found or expired"
+      }, 400);
+    }
+
+    // Check if OTP expired
+    const now = new Date();
+    const expiresAt = new Date(storedOtpData.expiresAt);
+    if (now > expiresAt) {
+      await kv.delete(otpKey); // Clean up expired OTP
+      return c.json({ 
+        success: false,
+        message: "OTP has expired"
+      }, 400);
+    }
+
+    // Verify OTP
+    if (storedOtpData.code !== otp) {
+      return c.json({ 
+        success: false,
+        message: "Invalid OTP"
+      }, 400);
+    }
+
+    // OTP is valid, clean it up
+    await kv.delete(otpKey);
+
+    // Check if user exists
+    const email = `${phone}@doosell.app`;
+    const { data: userData, error: getUserError } = await supabase.auth.admin.getUserByEmail(email);
+    
+    if (getUserError && !getUserError.message?.includes('User not found')) {
+      console.error('Check user error:', getUserError);
+      return c.json({ error: `Failed to check user: ${getUserError.message}` }, 500);
+    }
+    
+    const userExists = userData?.user?.id ? true : false;
+    
+    if (userExists) {
+      // User exists, sign them in
+      const password = phone; // Using phone as password
+      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password
+      });
+      
+      if (signInError) {
+        console.error('Sign in error after OTP verification:', signInError);
+        return c.json({ error: `Failed to sign in: ${signInError.message}` }, 500);
+      }
+      
+      // Get user data from KV store
+      const userId = signInData.user.id;
+      const userDataFromKV = await kv.get(`user:${userId}`);
+      const userStats = await kv.get(`user_stats:${userId}`);
+      const practiceLogs = await kv.get(`user_practice_logs:${userId}`) || [];
+
+      return c.json({ 
+        success: true,
+        userExists: true,
+        user: userDataFromKV,
+        stats: userStats,
+        practiceLogs,
+        session: signInData.session,
+        message: "OTP verified and user signed in successfully"
+      });
+    } else {
+      // New user, just confirm OTP verification
+      return c.json({ 
+        success: true,
+        userExists: false,
+        message: "OTP verified successfully"
+      });
+    }
+  } catch (error) {
+    console.error('Verify OTP error:', error);
+    return c.json({ error: `Failed to verify OTP: ${error.message}` }, 500);
+  }
+});
+
+// Check if user exists endpoint
+app.post("/make-server-80493cf3/check-user", async (c) => {
+  try {
+    const body = await c.req.json();
+    const { phone } = body;
+    
+    if (!phone) {
+      return c.json({ error: "Phone number is required" }, 400);
+    }
+
+    const email = `${phone}@doosell.app`;
+    
+    // Try to get user by email
+    const { data: userData, error: getUserError } = await supabase.auth.admin.getUserByEmail(email);
+    
+    if (getUserError && !getUserError.message?.includes('User not found')) {
+      console.error('Check user error:', getUserError);
+      return c.json({ error: `Failed to check user: ${getUserError.message}` }, 500);
+    }
+    
+    const exists = userData?.user?.id ? true : false;
+    
+    return c.json({ 
+      exists,
+      message: exists ? "User exists" : "User not found"
+    });
+  } catch (error) {
+    console.error('Check user error:', error);
+    return c.json({ error: `Failed to check user: ${error.message}` }, 500);
+  }
+});
+
 // User registration endpoint
 app.post("/make-server-80493cf3/register", async (c) => {
   try {

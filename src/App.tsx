@@ -13,24 +13,7 @@ import {
 // Import Persian font
 const fontUrl = 'https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700&display=swap';
 
-// Types
-interface User {
-  id: string;
-  firstName: string;
-  lastName: string;
-  phone: string;
-  instrument: string;
-  skillLevel: string;
-  registeredAt: string;
-}
-
-interface PracticeLog {
-  id: string;
-  date: string;
-  minutes: number;
-  notes?: string;
-  points: number;
-}
+// Types (imported from utils/api)
 
 interface AppState {
   user: User | null;
@@ -48,6 +31,7 @@ interface AppState {
   practiceTime: string;
   session: any | null;
   isLoading: boolean;
+  tempPhone?: string; // برای ذخیره موقت شماره تلفن در حین ثبت‌نام
 }
 
 // Context
@@ -72,6 +56,7 @@ const AppContext = createContext<{
     practiceTime: '20:00',
     session: null,
     isLoading: false,
+    tempPhone: undefined,
   },
   setState: () => {},
   navigate: () => {},
@@ -80,6 +65,9 @@ const AppContext = createContext<{
 // Components
 import SplashScreen from './components/SplashScreen';
 import RegistrationScreen from './components/RegistrationScreen';
+import PhoneInputScreen from './components/PhoneInputScreen';
+import OtpVerificationScreen from './components/OtpVerificationScreen';
+import UserDetailsScreen from './components/UserDetailsScreen';
 import DashboardScreen from './components/DashboardScreen';
 import PracticeLogScreen from './components/PracticeLogScreen';
 import ChallengesScreen from './components/ChallengesScreen';
@@ -114,6 +102,7 @@ function App() {
     practiceTime: '20:00',
     session: null,
     isLoading: false,
+    tempPhone: undefined,
   });
 
   const navigate = (page: string) => {
@@ -136,21 +125,19 @@ function App() {
     };
   }, []);
 
-  // Supabase session check and authentication
+  // Initialize app - simplified for demo mode
   useEffect(() => {
-    const initializeAuth = async () => {
+    const initializeApp = async () => {
       if (state.currentPage === 'splash') {
         setState(prev => ({ ...prev, isLoading: true }));
         
-        try {
-          // Check for existing Supabase session
-          const session = await getCurrentSession();
-          
-          if (session?.user) {
-            console.log('Found active session:', session.user.id);
-            
-            // Get user data from server
-            const { user, stats, practiceLogs } = await getUserData(session.user.id);
+        // Check for existing user in localStorage (demo mode)
+        const savedUser = localStorage.getItem('doosell_demo_user');
+        if (savedUser) {
+          try {
+            const user = JSON.parse(savedUser);
+            const practiceLogs = JSON.parse(localStorage.getItem('doosell_demo_practice_logs') || '[]');
+            const stats = JSON.parse(localStorage.getItem('doosell_demo_stats') || '{"totalPoints":0,"streak":0,"level":1,"hasActiveSubscription":false,"subscriptionExpiryDate":null}');
             
             setState(prev => ({
               ...prev,
@@ -163,65 +150,25 @@ function App() {
               level: stats.level,
               hasActiveSubscription: stats.hasActiveSubscription,
               subscriptionExpiryDate: stats.subscriptionExpiryDate,
-              session,
+              session: { user, access_token: 'demo-token' },
               isLoading: false,
-              // Load other settings from localStorage (these are local preferences)
               notificationsEnabled: localStorage.getItem('doosell_notifications') !== 'false',
               practiceFrequency: parseInt(localStorage.getItem('doosell_practice_frequency') || '0'),
               practiceDays: JSON.parse(localStorage.getItem('doosell_practice_days') || '[]'),
               practiceTime: localStorage.getItem('doosell_practice_time') || '20:00',
             }));
-            
-            // Check if we need to migrate localStorage data
-            const hasLocalData = localStorage.getItem('doosell_practice_logs') ||
-                               localStorage.getItem('doosell_subscription');
-            
-            if (hasLocalData && session.access_token) {
-              try {
-                console.log('Migrating localStorage data to Supabase...');
-                await migrateLocalStorageData(session.access_token);
-                toast.success('داده‌های محلی با موفقیت منتقل شدند');
-                
-                // Refresh user data after migration
-                const { user: updatedUser, stats: updatedStats, practiceLogs: updatedLogs } = await getUserData(session.user.id);
-                setState(prev => ({
-                  ...prev,
-                  user: updatedUser,
-                  practicesLogs: updatedLogs,
-                  totalPoints: updatedStats.totalPoints,
-                  streak: updatedStats.streak,
-                  level: updatedStats.level,
-                  hasActiveSubscription: updatedStats.hasActiveSubscription,
-                  subscriptionExpiryDate: updatedStats.subscriptionExpiryDate,
-                }));
-              } catch (migrationError) {
-                console.error('Migration failed:', migrationError);
-                toast.error('خطا در انتقال داده‌ها');
-              }
-            }
-          } else {
-            // No session, check localStorage for backwards compatibility
-            const savedUser = localStorage.getItem('doosell_user');
-            if (savedUser) {
-              console.log('Found localStorage user, redirecting to registration to migrate');
-              setState(prev => ({ 
-                ...prev, 
-                currentPage: 'registration',
-                isLoading: false 
-              }));
-            } else {
-              setState(prev => ({ 
-                ...prev, 
-                currentPage: 'registration',
-                isLoading: false 
-              }));
-            }
+          } catch (error) {
+            console.error('Error loading demo user:', error);
+            setState(prev => ({ 
+              ...prev, 
+              currentPage: 'phone-input',
+              isLoading: false 
+            }));
           }
-        } catch (error) {
-          console.error('Auth initialization error:', error);
+        } else {
           setState(prev => ({ 
             ...prev, 
-            currentPage: 'registration',
+            currentPage: 'phone-input',
             isLoading: false 
           }));
         }
@@ -233,7 +180,7 @@ function App() {
       }
     };
 
-    initializeAuth();
+    initializeApp();
   }, [state.currentPage]);
 
   const renderCurrentPage = () => {
@@ -242,6 +189,12 @@ function App() {
         return <SplashScreen />;
       case 'registration':
         return <RegistrationScreen />;
+      case 'phone-input':
+        return <PhoneInputScreen />;
+      case 'otp-verification':
+        return <OtpVerificationScreen />;
+      case 'user-details':
+        return <UserDetailsScreen />;
       case 'dashboard':
         return <DashboardScreen />;
       case 'practice-log':
@@ -273,7 +226,7 @@ function App() {
     }
   };
 
-  const showBottomNav = state.isAuthenticated && !['splash', 'registration', 'subscription', 'settings', 'weekly-league', 'global-ranking', 'practice-history', 'practice-days', 'practice-time'].includes(state.currentPage);
+  const showBottomNav = state.isAuthenticated && !['splash', 'registration', 'phone-input', 'otp-verification', 'user-details', 'subscription', 'settings', 'weekly-league', 'global-ranking', 'practice-history', 'practice-days', 'practice-time'].includes(state.currentPage);
 
   return (
     <AppContext.Provider value={{ state, setState, navigate }}>
