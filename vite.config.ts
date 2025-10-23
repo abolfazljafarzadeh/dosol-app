@@ -1,24 +1,13 @@
-import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react-swc';
-import path from 'path';
 
-export default defineConfig(async ({ mode }) => {
-  const plugins = [react()];
-  
-  if (mode === 'development') {
-    try {
-      const { componentTagger } = await import('lovable-tagger');
-      plugins.push(componentTagger());
-    } catch (e) {
-      // lovable-tagger not available
-    }
-  }
-  
-  return {
-    plugins,
+  import { defineConfig } from 'vite';
+  import react from '@vitejs/plugin-react-swc';
+  import path from 'path';
+
+  export default defineConfig({
+    plugins: [react()],
     resolve: {
+      extensions: ['.js', '.jsx', '.ts', '.tsx', '.json'],
       alias: {
-        '@': path.resolve(__dirname, './src'),
         'vaul@1.1.2': 'vaul',
         'sonner@2.0.3': 'sonner',
         'recharts@2.15.2': 'recharts',
@@ -28,6 +17,7 @@ export default defineConfig(async ({ mode }) => {
         'next-themes@0.4.6': 'next-themes',
         'lucide-react@0.487.0': 'lucide-react',
         'input-otp@1.4.2': 'input-otp',
+        'figma:asset/b58b06cddb1628092c6db84c1360a4a9e7aca31b.png': path.resolve(__dirname, './src/assets/b58b06cddb1628092c6db84c1360a4a9e7aca31b.png'),
         'embla-carousel-react@8.6.0': 'embla-carousel-react',
         'cmdk@1.1.1': 'cmdk',
         'class-variance-authority@0.7.1': 'class-variance-authority',
@@ -57,22 +47,16 @@ export default defineConfig(async ({ mode }) => {
         '@radix-ui/react-aspect-ratio@1.1.2': '@radix-ui/react-aspect-ratio',
         '@radix-ui/react-alert-dialog@1.1.6': '@radix-ui/react-alert-dialog',
         '@radix-ui/react-accordion@1.2.3': '@radix-ui/react-accordion',
+        '@jsr/supabase__supabase-js@2.49.8': '@jsr/supabase__supabase-js',
+        '@': path.resolve(__dirname, './src'),
       },
-    },
-    server: {
-      port: 8080,
-      host: true,
-    },
-    preview: {
-      port: 8080,
-      host: true,
     },
     build: {
-      rollupOptions: {
-        output: {
-          manualChunks: undefined,
-        },
-      },
+      target: 'esnext',
+      outDir: 'build',
     },
-  };
-});
+    server: {
+      port: 3000,
+      open: true,
+    },
+  });

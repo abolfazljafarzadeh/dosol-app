@@ -1,30 +1,29 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from './ui/button';
-import { Card, CardContent } from './ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog';
 import { useApp } from '../App';
-import { ShoppingBag, Star, Clock, Users, PlayCircle, Loader2 } from 'lucide-react';
+import { ShoppingBag, Star, Clock, Users, PlayCircle } from 'lucide-react';
 import { ImageWithFallback } from './figma/ImageWithFallback';
-import { toast } from 'sonner';
-import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner@2.0.3';
 
 interface Course {
-  id: number;
+  id: string;
   title: string;
   instructor: string;
   description: string;
   price: number;
-  discountPrice: number | null;
-  discountPercent: number | null;
-  discountEndDate: string | null;
+  originalPrice?: number;
   rating: number;
-  studentsCount: number;
-  duration: string | null;
+  students: number;
+  duration: string;
   level: string;
   image: string;
   category: string;
-  videoUrl: string;
+  isPopular?: boolean;
+  hasDiscount?: boolean;
+  discountEndTime?: Date;
 }
 
 interface TimeRemaining {
@@ -35,97 +34,109 @@ interface TimeRemaining {
 }
 
 const StorefrontScreen = () => {
-  const { state, navigate } = useApp();
-  const [courses, setCourses] = useState<Course[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { state } = useApp();
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
-  const [timeRemaining, setTimeRemaining] = useState<Record<number, TimeRemaining>>({});
-  const [purchasingCourseId, setPurchasingCourseId] = useState<number | null>(null);
+  const [showCheckout, setShowCheckout] = useState(false);
+  const [timeRemaining, setTimeRemaining] = useState<Record<string, TimeRemaining>>({});
 
-  // Map instructor names based on course title
-  const getInstructorName = (courseTitle: string): string => {
-    const title = courseTitle.toLowerCase();
-    
-    if (title.includes('استادیار')) return 'جمعی از اساتید';
-    if (title.includes('تئوری موسیقی')) return 'آقای علیرضا مهندس';
-    if (title.includes('کمالگرایی') || title.includes('استرس') || title.includes('تنبلی') || title.includes('اعتماد به نفس')) {
-      return 'دکتر آرش جواهری';
+  const courses: Course[] = [
+    {
+      id: '1',
+      title: 'پیانو از صفر تا صد',
+      instructor: 'استاد احمدی',
+      description: 'آموزش کامل پیانو برای تازه‌کارها با تمرینات عملی',
+      price: 290000,
+      originalPrice: 350000,
+      rating: 4.8,
+      students: 1250,
+      duration: '8 ساعت',
+      level: 'تازه‌کار',
+      image: 'https://images.unsplash.com/photo-1571974599782-87624638275c?w=400&h=250&fit=crop',
+      category: 'پیانو',
+      isPopular: true,
+      hasDiscount: true,
+      discountEndTime: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000) // 3 days from now
+    },
+    {
+      id: '2',
+      title: 'تکنیک‌های پیشرفته گیتار',
+      instructor: 'استاد رضایی',
+      description: 'فراتر از مبانی: تکنیک‌های حرفه‌ای گیتار',
+      price: 320000,
+      rating: 4.9,
+      students: 890,
+      duration: '12 ساعت',
+      level: 'پیشرفته',
+      image: 'https://images.unsplash.com/photo-1519320859666-7df74052ee72?w=400&h=250&fit=crop',
+      category: 'گیتار'
+    },
+    {
+      id: '3',
+      title: 'موسیقی سنتی ایرانی',
+      instructor: 'استاد فرهادی',
+      description: 'آشنایی با دستگاه‌های موسیقی سنتی ایران',
+      price: 250000,
+      rating: 4.7,
+      students: 650,
+      duration: '10 ساعت',
+      level: 'متوسط',
+      image: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400&h=250&fit=crop',
+      category: 'سنتی'
+    },
+    {
+      id: '4',
+      title: 'ویولن برای کودکان',
+      instructor: 'استاد میرزایی',
+      description: 'آموزش شاد و جذاب ویولن ویژه کودکان ۶ تا ۱۲ سال',
+      price: 180000,
+      originalPrice: 220000,
+      rating: 4.6,
+      students: 430,
+      duration: '6 ساعت',
+      level: 'تازه‌کار',
+      image: 'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=400&h=250&fit=crop',
+      category: 'ویولن',
+      hasDiscount: true,
+      discountEndTime: new Date(Date.now() + 1 * 24 * 60 * 60 * 1000) // 1 day from now
+    },
+    {
+      id: '5',
+      title: 'آهنگسازی مدرن',
+      instructor: 'استاد نوری',
+      description: 'خلق موسیقی با نرم‌افزارهای مدرن و تکنیک‌های نوین',
+      price: 450000,
+      rating: 4.9,
+      students: 320,
+      duration: '15 ساعت',
+      level: 'حرفه‌ای',
+      image: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&h=250&fit=crop',
+      category: 'آهنگسازی',
+      isPopular: true
+    },
+    {
+      id: '6',
+      title: 'سنتور کلاسیک',
+      instructor: 'استاد حسینی',
+      description: 'تسلط بر نوازندگی سنتور با قطعات کلاسیک',
+      price: 210000,
+      rating: 4.5,
+      students: 280,
+      duration: '8 ساعت',
+      level: 'متوسط',
+      image: 'https://images.unsplash.com/photo-1578662996442-48f60103fc96?w=400&h=250&fit=crop',
+      category: 'سنتور'
     }
-    if (title.includes('نت خوانی')) return 'خانم گلبن زارع';
-    if (title.includes('مترونوم')) return 'خانم غزل مخمور';
-    if (title.includes('ریتم خوانی') && !title.includes('چالش')) return 'آقای سورنا صفاتی';
-    
-    return 'مدرس دوسل';
-  };
-
-  // Map level based on course title
-  const getCourseLevel = (courseTitle: string): string => {
-    const title = courseTitle.toLowerCase();
-    
-    if (title.includes('نت خوانی') || title.includes('تئوری')) {
-      return 'مبتدی/متوسط';
-    }
-    
-    return 'مبتدی/متوسط/پیشرفته';
-  };
-
-  // Fetch courses from WooCommerce
-  useEffect(() => {
-    fetchCourses();
-  }, []);
-
-  const fetchCourses = async () => {
-    try {
-      setLoading(true);
-      const { data, error } = await supabase.functions.invoke('get-woocommerce-courses');
-      
-      if (error) throw error;
-      
-      if (data?.ok && data?.courses) {
-        // Filter out unwanted courses and map instructors/levels/ratings
-        const filteredCourses = data.courses
-          .filter((course: Course) => {
-            const title = course.title.toLowerCase();
-            // Filter out rhythm challenge (check for both keywords) and AI assistant courses
-            const isRhythmChallenge = title.includes('چالش') && title.includes('ریتم');
-            const isAIAssistant = title.includes('دستیار هوشمند') || title.includes('دستیار');
-            return !isRhythmChallenge && !isAIAssistant;
-          })
-          .map((course: Course) => {
-            // Calculate discount percentage dynamically
-            const discountPercent = course.discountPrice && course.price
-              ? Math.round(((course.price - course.discountPrice) / course.price) * 100)
-              : null;
-
-            return {
-              ...course,
-              instructor: getInstructorName(course.title),
-              level: getCourseLevel(course.title),
-              rating: +(4.6 + Math.random() * 0.3).toFixed(1), // Random rating between 4.6-4.9
-              discountPercent
-            };
-          });
-        
-        setCourses(filteredCourses);
-      }
-    } catch (error) {
-      console.error('Error fetching courses:', error);
-      toast.error('خطا در بارگذاری دوره‌ها');
-    } finally {
-      setLoading(false);
-    }
-  };
+  ];
 
   // Countdown timer for discounted courses
   useEffect(() => {
     const updateTimers = () => {
-      const newTimeRemaining: Record<number, TimeRemaining> = {};
+      const newTimeRemaining: Record<string, TimeRemaining> = {};
       
       courses.forEach(course => {
-        if (course.discountPrice && course.discountEndDate) {
+        if (course.hasDiscount && course.discountEndTime) {
           const now = new Date().getTime();
-          const endDate = new Date(course.discountEndDate).getTime();
-          const difference = endDate - now;
+          const difference = course.discountEndTime.getTime() - now;
 
           if (difference > 0) {
             const days = Math.floor(difference / (1000 * 60 * 60 * 24));
@@ -146,7 +157,7 @@ const StorefrontScreen = () => {
     updateTimers();
     const timer = setInterval(updateTimers, 1000);
     return () => clearInterval(timer);
-  }, [courses]);
+  }, []);
 
   const formatTime = (num: number) => {
     return new Intl.NumberFormat('fa-IR').format(num).padStart(2, '۰');
@@ -160,54 +171,16 @@ const StorefrontScreen = () => {
     setSelectedCourse(course);
   };
 
-  const handleBuyClick = async (course: Course) => {
-    if (!state.user) {
-      toast.error('لطفاً ابتدا وارد شوید');
-      navigate('phone-input');
-      return;
-    }
-
-    try {
-      setPurchasingCourseId(course.id);
-      const finalPrice = course.discountPrice || course.price;
-
-      console.log('🛒 Starting course checkout:', { courseId: course.id, amount: finalPrice });
-
-      // Create purchase record
-      const { data, error } = await supabase.functions.invoke('start-checkout-course', {
-        body: { 
-          course_id: course.id,
-          amount: finalPrice
-        }
-      });
-
-      if (error) throw error;
-
-      if (data?.ok && data?.payment_url) {
-        console.log('✅ Payment URL received, redirecting...');
-        // Redirect to payment gateway
-        window.location.href = data.payment_url;
-      } else {
-        throw new Error('خطا در ایجاد لینک پرداخت');
-      }
-    } catch (error: any) {
-      console.error('Error starting checkout:', error);
-      toast.error(error.message || 'خطا در شروع پرداخت');
-    } finally {
-      setPurchasingCourseId(null);
-    }
+  const handleBuyClick = (course: Course) => {
+    setSelectedCourse(course);
+    setShowCheckout(true);
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-orange-50 via-amber-50 to-yellow-50 flex items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="w-8 h-8 animate-spin text-orange-500 mx-auto mb-2" />
-          <p className="text-gray-600">در حال بارگذاری دوره‌ها...</p>
-        </div>
-      </div>
-    );
-  }
+  const handleCheckoutSubmit = () => {
+    setShowCheckout(false);
+    setSelectedCourse(null);
+    toast.success('خرید شما با موفقیت ثبت شد! لینک دوره به زودی ارسال می‌شود.');
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 via-amber-50 to-yellow-50 pb-20">
@@ -217,7 +190,7 @@ const StorefrontScreen = () => {
           <ShoppingBag className="w-7 h-7" />
           ویترین دوره‌ها
         </h1>
-        <p className="text-white/90">دوره‌های آموزشی با کیفیت از دوسل</p>
+        <p className="text-white/90">دوره‌های آموزشی با کیفیت</p>
       </div>
 
       <div className="p-6">
@@ -244,17 +217,15 @@ const StorefrontScreen = () => {
                   alt={course.title}
                   className="w-full h-32 object-cover rounded-t-2xl"
                 />
-                {course.title.includes('استادیار') && (
+                {course.isPopular && (
                   <Badge className="absolute top-2 right-2 bg-red-500 text-white">
                     محبوب
                   </Badge>
                 )}
-                {course.duration && (
-                  <div className="absolute bottom-2 left-2 bg-black/70 text-white text-xs px-2 py-1 rounded-lg flex items-center gap-1">
-                    <PlayCircle className="w-3 h-3" />
-                    {course.duration}
-                  </div>
-                )}
+                <div className="absolute bottom-2 left-2 bg-black/70 text-white text-xs px-2 py-1 rounded-lg flex items-center gap-1">
+                  <PlayCircle className="w-3 h-3" />
+                  {course.duration}
+                </div>
               </div>
               
               <CardContent className="p-4">
@@ -269,15 +240,19 @@ const StorefrontScreen = () => {
                 <div className="flex items-center gap-4 mb-3 text-xs text-gray-600">
                   <div className="flex items-center gap-1">
                     <Star className="w-3 h-3 fill-yellow-400 text-yellow-400" />
-                    <span>{course.rating.toLocaleString('fa-IR')}</span>
+                    <span>{course.rating}</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Users className="w-3 h-3" />
+                    <span>{course.students.toLocaleString('fa-IR')} دانشجو</span>
                   </div>
                   <Badge variant="outline" className="text-xs">
-                    سطح: {course.level}
+                    {course.level}
                   </Badge>
                 </div>
 
                 {/* Discount Countdown Timer */}
-                {course.discountPrice && timeRemaining[course.id] && (
+                {course.hasDiscount && timeRemaining[course.id] && (
                   <div className="mb-3 p-2 bg-red-50 border border-red-200 rounded-lg">
                     <div className="text-center">
                       <p className="text-xs text-red-700 mb-1">پایان تخفیف</p>
@@ -305,25 +280,18 @@ const StorefrontScreen = () => {
 
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    {course.discountPrice && (
-                      <>
-                        <span className="text-sm text-gray-500 line-through">
-                          {formatPrice(course.price)}
-                        </span>
-                        <span className="text-lg text-orange-600">
-                          {formatPrice(course.discountPrice)}
-                        </span>
-                        {course.discountPercent && (
-                          <Badge variant="destructive" className="text-xs">
-                            {course.discountPercent.toLocaleString('fa-IR')}% تخفیف
-                          </Badge>
-                        )}
-                      </>
-                    )}
-                    {!course.discountPrice && (
-                      <span className="text-lg text-orange-600">
-                        {formatPrice(course.price)}
+                    {course.originalPrice && (
+                      <span className="text-sm text-gray-500 line-through">
+                        {formatPrice(course.originalPrice)}
                       </span>
+                    )}
+                    <span className="text-lg text-orange-600">
+                      {formatPrice(course.price)}
+                    </span>
+                    {course.hasDiscount && course.originalPrice && (
+                      <Badge variant="destructive" className="text-xs">
+                        {Math.round(((course.originalPrice - course.price) / course.originalPrice) * 100)}% تخفیف
+                      </Badge>
                     )}
                   </div>
                   <Button 
@@ -332,10 +300,9 @@ const StorefrontScreen = () => {
                       handleBuyClick(course);
                     }}
                     size="sm"
-                    disabled={purchasingCourseId === course.id}
                     className="bg-gradient-to-r from-orange-400 to-amber-400 hover:from-orange-500 hover:to-amber-500 text-white rounded-lg"
                   >
-                    {purchasingCourseId === course.id ? <Loader2 className="w-4 h-4 animate-spin" /> : 'خرید'}
+                    خرید
                   </Button>
                 </div>
               </CardContent>
@@ -343,24 +310,22 @@ const StorefrontScreen = () => {
           ))}
         </div>
 
-        {/* Empty State */}
-        {courses.length === 0 && !loading && (
-          <Card className="rounded-2xl shadow-sm mt-6">
-            <CardContent className="p-6 text-center">
-              <div className="w-12 h-12 mx-auto bg-gradient-to-br from-gray-200 to-gray-300 rounded-xl flex items-center justify-center mb-3">
-                <ShoppingBag className="w-6 h-6 text-gray-500" />
-              </div>
-              <h3 className="text-base mb-2">هنوز دوره‌ای موجود نیست</h3>
-              <p className="text-sm text-gray-600">
-                به زودی دوره‌های جدید اضافه می‌شوند
-              </p>
-            </CardContent>
-          </Card>
-        )}
+        {/* Empty State for More Courses */}
+        <Card className="rounded-2xl shadow-sm mt-6">
+          <CardContent className="p-6 text-center">
+            <div className="w-12 h-12 mx-auto bg-gradient-to-br from-gray-200 to-gray-300 rounded-xl flex items-center justify-center mb-3">
+              <ShoppingBag className="w-6 h-6 text-gray-500" />
+            </div>
+            <h3 className="text-base mb-2">دوره‌های بیشتر به زودی...</h3>
+            <p className="text-sm text-gray-600">
+              ما مدام در حال اضافه کردن دوره‌های جدید هستیم
+            </p>
+          </CardContent>
+        </Card>
       </div>
 
-      {/* Course Video Modal */}
-      <Dialog open={!!selectedCourse} onOpenChange={(open) => !open && setSelectedCourse(null)}>
+      {/* Course Detail Modal */}
+      <Dialog open={!!selectedCourse && !showCheckout} onOpenChange={() => setSelectedCourse(null)}>
         <DialogContent className="mx-4 max-h-[80vh] overflow-y-auto">
           {selectedCourse && (
             <>
@@ -369,39 +334,27 @@ const StorefrontScreen = () => {
                 <DialogDescription>{selectedCourse.instructor}</DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
-                {/* Video Player */}
-                {selectedCourse.videoUrl ? (
-                  <div className="w-full aspect-video bg-black rounded-xl overflow-hidden">
-                    <video 
-                      src={selectedCourse.videoUrl} 
-                      controls 
-                      className="w-full h-full"
-                      poster={selectedCourse.image}
-                    >
-                      مرورگر شما از نمایش ویدیو پشتیبانی نمی‌کند.
-                    </video>
-                  </div>
-                ) : (
-                  <ImageWithFallback
-                    src={selectedCourse.image}
-                    alt={selectedCourse.title}
-                    className="w-full h-40 object-cover rounded-xl"
-                  />
-                )}
+                <ImageWithFallback
+                  src={selectedCourse.image}
+                  alt={selectedCourse.title}
+                  className="w-full h-40 object-cover rounded-xl"
+                />
                 
                 <div className="grid grid-cols-2 gap-4 text-sm">
-                  {selectedCourse.duration && (
-                    <div className="flex items-center gap-2">
-                      <Clock className="w-4 h-4 text-orange-500" />
-                      <span>{selectedCourse.duration}</span>
-                    </div>
-                  )}
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-orange-500" />
+                    <span>{selectedCourse.duration}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Users className="w-4 h-4 text-orange-500" />
+                    <span>{selectedCourse.students.toLocaleString('fa-IR')} دانشجو</span>
+                  </div>
                   <div className="flex items-center gap-2">
                     <Star className="w-4 h-4 text-orange-500" />
-                    <span>{selectedCourse.rating.toLocaleString('fa-IR')} امتیاز</span>
+                    <span>{selectedCourse.rating} امتیاز</span>
                   </div>
                   <Badge variant="outline" className="w-fit">
-                    سطح: {selectedCourse.level}
+                    {selectedCourse.level}
                   </Badge>
                 </div>
 
@@ -410,27 +363,73 @@ const StorefrontScreen = () => {
                 <div className="bg-gradient-to-br from-amber-50 to-yellow-50 rounded-xl p-4 border border-amber-200">
                   <div className="flex items-center justify-between">
                     <div>
-                      {selectedCourse.discountPrice && (
+                      {selectedCourse.originalPrice && (
                         <span className="text-sm text-gray-500 line-through block">
-                          {formatPrice(selectedCourse.price)}
+                          {formatPrice(selectedCourse.originalPrice)}
                         </span>
                       )}
                       <span className="text-xl text-orange-600">
-                        {formatPrice(selectedCourse.discountPrice || selectedCourse.price)}
+                        {formatPrice(selectedCourse.price)}
                       </span>
                     </div>
                     <Button
                       onClick={() => handleBuyClick(selectedCourse)}
-                      disabled={purchasingCourseId === selectedCourse.id}
                       className="bg-gradient-to-r from-orange-400 to-amber-400 hover:from-orange-500 hover:to-amber-500 text-white rounded-xl"
                     >
-                      {purchasingCourseId === selectedCourse.id ? <Loader2 className="w-4 h-4 animate-spin" /> : 'خرید دوره'}
+                      خرید دوره
                     </Button>
                   </div>
                 </div>
               </div>
             </>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Checkout Modal */}
+      <Dialog open={showCheckout} onOpenChange={setShowCheckout}>
+        <DialogContent className="mx-4">
+          <DialogHeader>
+            <DialogTitle>تکمیل خرید</DialogTitle>
+            <DialogDescription>
+              آیا از خرید دوره "{selectedCourse?.title}" مطمئن هستید؟
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {selectedCourse && (
+              <div className="bg-gray-50 rounded-xl p-4">
+                <h4 className="mb-2">{selectedCourse.title}</h4>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-600">قیمت:</span>
+                  <span className="text-lg text-orange-600">
+                    {formatPrice(selectedCourse.price)}
+                  </span>
+                </div>
+              </div>
+            )}
+            
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-3">
+              <p className="text-blue-700 text-sm text-center">
+                در نسخه آزمایشی پرداخت واقعی وجود ندارد
+              </p>
+            </div>
+
+            <div className="flex gap-3">
+              <Button
+                variant="outline"
+                onClick={() => setShowCheckout(false)}
+                className="flex-1"
+              >
+                انصراف
+              </Button>
+              <Button
+                onClick={handleCheckoutSubmit}
+                className="flex-1 bg-gradient-to-r from-orange-400 to-amber-400 hover:from-orange-500 hover:to-amber-500 text-white"
+              >
+                تأیید خرید
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

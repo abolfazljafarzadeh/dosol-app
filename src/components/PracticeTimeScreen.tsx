@@ -61,7 +61,7 @@ const PracticeTimeScreen = () => {
     return `${hour.padStart(2, '0')}:${minute.padStart(2, '0')}`;
   };
 
-  const handleContinue = async () => {
+  const handleContinue = () => {
     const validationError = validateTime(selectedHour, selectedMinute);
     if (validationError) {
       setError(validationError);
@@ -70,35 +70,9 @@ const PracticeTimeScreen = () => {
 
     const formattedTime = formatTime(selectedHour, selectedMinute);
     
-    // Map day names to 0-6 (Saturday=0)
-    const dayMap: Record<string, number> = {
-      'saturday': 0,
-      'sunday': 1,
-      'monday': 2,
-      'tuesday': 3,
-      'wednesday': 4,
-      'thursday': 5,
-      'friday': 6,
-    };
-    
-    const days = state.practiceDays?.map(day => dayMap[day] || 0) || [];
-    
-    // Save training plan to backend
-    if (state.session?.user?.id) {
-      const { saveTrainingPlan } = await import('@/services/backend');
-      try {
-        await saveTrainingPlan({
-          days,
-          times: { [formattedTime]: true },
-          tz: 'Asia/Tehran',
-        });
-      } catch (error) {
-        console.error('Failed to save training plan:', error);
-      }
-    }
-    
-    // Save locally
+    // Save to localStorage and state
     localStorage.setItem('doosell_practice_time', formattedTime);
+    
     setState(prev => ({
       ...prev,
       practiceTime: formattedTime,
@@ -108,6 +82,7 @@ const PracticeTimeScreen = () => {
   };
 
   const handleSkip = () => {
+    // Skip to dashboard with default time
     localStorage.setItem('doosell_practice_time', '20:00');
     setState(prev => ({
       ...prev,

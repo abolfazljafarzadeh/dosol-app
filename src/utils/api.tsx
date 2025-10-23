@@ -26,6 +26,117 @@ export interface UserStats {
   subscriptionExpiryDate: string | null;
 }
 
+// Check if user exists
+export const checkUserExists = async (phone: string): Promise<boolean> => {
+  try {
+    const response = await makeServerRequest('/check-user', {
+      method: 'POST',
+      body: JSON.stringify({ phone }),
+    });
+    
+    return response.exists;
+  } catch (error) {
+    console.error('Check user error:', error);
+    return false;
+  }
+};
+
+// Send OTP to phone number
+export const sendOTP = async (phone: string): Promise<{ success: boolean; message: string }> => {
+  // Mock implementation for development
+  console.log('📱 Mock OTP sent to:', phone);
+  console.log('🔐 Mock OTP Code: 123456');
+  
+  // Simulate network delay
+  await new Promise(resolve => setTimeout(resolve, 1000));
+  
+  return {
+    success: true,
+    message: "کد تأیید ارسال شد"
+  };
+};
+
+// Verify OTP
+export const verifyOTP = async (phone: string, otp: string): Promise<{ 
+  success: boolean; 
+  userExists: boolean;
+  user?: User;
+  stats?: UserStats;
+  practiceLogs?: PracticeLog[];
+  session?: any;
+}> => {
+  // Mock implementation for development
+  console.log('🔐 Verifying OTP:', otp, 'for phone:', phone);
+  
+  // Simulate network delay
+  await new Promise(resolve => setTimeout(resolve, 1500));
+  
+  // Accept demo OTP: 123456
+  if (otp !== '123456') {
+    return {
+      success: false,
+      userExists: false,
+      message: "کد تأیید نامعتبر است"
+    };
+  }
+  
+  // Check if it's a demo existing user (09123456789)
+  const isExistingUser = phone === '09123456789';
+  
+  if (isExistingUser) {
+    // Mock existing user data
+    const mockUser: User = {
+      id: 'demo-user-123',
+      firstName: 'علی',
+      lastName: 'موسوی',
+      phone: phone,
+      instrument: 'piano',
+      skillLevel: 'intermediate',
+      registeredAt: '2024-01-15T10:30:00Z'
+    };
+    
+    const mockStats: UserStats = {
+      totalPoints: 1250,
+      streak: 7,
+      level: 2,
+      hasActiveSubscription: true,
+      subscriptionExpiryDate: '2025-02-15T00:00:00Z'
+    };
+    
+    const mockLogs: PracticeLog[] = [
+      {
+        id: '1',
+        date: new Date().toISOString().split('T')[0],
+        minutes: 45,
+        notes: 'تمرین گام‌ها و آرپژ',
+        points: 30
+      },
+      {
+        id: '2',
+        date: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        minutes: 60,
+        notes: 'کار روی قطعه جدید',
+        points: 40
+      }
+    ];
+    
+    return {
+      success: true,
+      userExists: true,
+      user: mockUser,
+      stats: mockStats,
+      practiceLogs: mockLogs,
+      session: { user: mockUser, access_token: 'mock-token' }
+    };
+  } else {
+    // New user
+    return {
+      success: true,
+      userExists: false
+    };
+  }
+};
+
 // Auth functions
 export const registerUser = async (userData: {
   firstName: string;
@@ -34,82 +145,38 @@ export const registerUser = async (userData: {
   instrument: string;
   skillLevel: string;
 }): Promise<{ user: User; authUser: any; session?: any; stats?: UserStats; practiceLogs?: PracticeLog[]; userExists?: boolean }> => {
-  try {
-    console.log('Starting registration via Edge Function');
-
-    // دریافت session فعلی - supabase خودش session را مدیریت می‌کند
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-    
-    if (sessionError || !session?.user) {
-      console.error('No active session found');
-      throw new Error('نشست کاربری یافت نشد. لطفاً دوباره وارد شوید');
-    }
-
-    // فراخوانی Edge Function - Authorization header خودکار توسط supabase اضافه می‌شود
-    const { data, error } = await supabase.functions.invoke('register-user', {
-      body: { 
-        first_name: userData.firstName,
-        last_name: userData.lastName || '',
-        instrument: userData.instrument,
-        level: userData.skillLevel,
-        tz: 'Asia/Tehran',
-      }
-    });
-
-    if (error) {
-      console.error('Edge Function error:', error);
-      throw new Error('خطا در ثبت‌نام: ' + error.message);
-    }
-
-    // دریافت profile به‌روز شده از دیتابیس
-    const { data: profile, error: profileError } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', session.user.id)
-      .single();
-
-    if (profileError) {
-      console.error('Error fetching updated profile:', profileError);
-      throw new Error('خطا در دریافت پروفایل');
-    }
-
-    // دریافت xp_counter
-    const { data: xpCounter } = await supabase
-      .from('xp_counters')
-      .select('*')
-      .eq('user_id', session.user.id)
-      .maybeSingle();
-
-    const user: User = {
-      id: session.user.id,
-      firstName: profile.first_name || userData.firstName,
-      lastName: profile.last_name || userData.lastName,
-      phone: userData.phone,
-      instrument: profile.instrument || userData.instrument,
-      skillLevel: profile.level || userData.skillLevel,
-      registeredAt: profile.created_at || new Date().toISOString(),
-    };
-
-    const stats: UserStats = {
-      totalPoints: xpCounter?.total_xp || 0,
-      streak: xpCounter?.streak || 0,
-      level: Math.floor((xpCounter?.total_xp || 0) / 100) + 1,
-      hasActiveSubscription: profile.is_premium || false,
-      subscriptionExpiryDate: null,
-    };
-
-    return {
-      user, 
-      authUser: session.user, 
-      session, 
-      stats, 
-      practiceLogs: [], 
-      userExists: false 
-    };
-  } catch (error) {
-    console.error('Registration error:', error);
-    throw error;
-  }
+  // Mock implementation for development
+  console.log('📝 Mock registering user:', userData);
+  
+  // Simulate network delay
+  await new Promise(resolve => setTimeout(resolve, 2000));
+  
+  const mockUser: User = {
+    id: `demo-user-${Date.now()}`,
+    firstName: userData.firstName,
+    lastName: userData.lastName,
+    phone: userData.phone,
+    instrument: userData.instrument,
+    skillLevel: userData.skillLevel,
+    registeredAt: new Date().toISOString()
+  };
+  
+  const mockStats: UserStats = {
+    totalPoints: 0,
+    streak: 0,
+    level: 1,
+    hasActiveSubscription: false,
+    subscriptionExpiryDate: null
+  };
+  
+  return {
+    user: mockUser,
+    authUser: mockUser,
+    session: { user: mockUser, access_token: 'mock-token' },
+    stats: mockStats,
+    practiceLogs: [],
+    userExists: false
+  };
 };
 
 export const loginUser = async (phone: string): Promise<{
@@ -173,129 +240,8 @@ export const getUserData = async (userId: string): Promise<{
   }
 };
 
-// New backend API functions
-export const logPractice = async (practiceData: {
-  minutes: number;
-  note?: string;
-  idempotency_key: string;
-}): Promise<{
-  ok: boolean;
-  xpGained: number;
-  xpToday: number;
-  streak: { current: number; best: number };
-  challenge: { daysDone: number; isCompleted: boolean } | null;
-  league: { id: string; xpWeek: number; rank: number | null } | null;
-}> => {
-  try {
-    const { data, error } = await supabase.functions.invoke('log-practice', {
-      body: practiceData
-    });
-
-    if (error) {
-      console.error('Log practice error:', error);
-      throw new Error(error.message || 'خطا در ثبت تمرین');
-    }
-
-    if (!data || !data.ok) {
-      throw new Error(data?.error || 'خطا در ثبت تمرین');
-    }
-    
-    return data;
-  } catch (error) {
-    console.error('Log practice error:', error);
-    throw error;
-  }
-};
-
-export const getDashboard = async (): Promise<{
-  ok: boolean;
-  today: { minutes: number; count: number };
-  totalXp: number;
-  currentStreak: number;
-  challenge: any;
-  league: any;
-  motivationalMessage: string;
-}> => {
-  try {
-    const { data, error } = await supabase.functions.invoke('get-dashboard', {});
-
-    if (error) {
-      console.error('Get dashboard error:', error);
-      throw new Error(error.message || 'خطا در دریافت داشبورد');
-    }
-
-    return data;
-  } catch (error) {
-    console.error('Get dashboard error:', error);
-    throw error;
-  }
-};
-
-export const getAchievements = async (): Promise<{
-  ok: boolean;
-  level: { current: number; xpForNextLevel: number; progressPercent: number };
-  badges: any[];
-  league: any;
-}> => {
-  try {
-    const { data, error } = await supabase.functions.invoke('get-achievements', {});
-
-    if (error) {
-      console.error('Get achievements error:', error);
-      throw new Error(error.message || 'خطا در دریافت دستاوردها');
-    }
-
-    return data;
-  } catch (error) {
-    console.error('Get achievements error:', error);
-    throw error;
-  }
-};
-
-export const saveTrainingPlan = async (planData: {
-  days: number[];
-  times: Record<string, boolean>;
-  tz?: string;
-}): Promise<{ ok: boolean }> => {
-  try {
-    const { data, error } = await supabase.functions.invoke('save-training-plan', {
-      body: planData
-    });
-
-    if (error) {
-      console.error('Save training plan error:', error);
-      throw new Error(error.message || 'خطا در ذخیره برنامه');
-    }
-
-    return data;
-  } catch (error) {
-    console.error('Save training plan error:', error);
-    throw error;
-  }
-};
-
-export const joinWeeklyLeague = async (): Promise<{
-  ok: boolean;
-  leagueId: string;
-  message: string;
-}> => {
-  try {
-    const { data, error } = await supabase.functions.invoke('join-weekly-league', {});
-
-    if (error) {
-      console.error('Join league error:', error);
-      throw new Error(error.message || 'خطا در پیوستن به لیگ');
-    }
-
-    return data;
-  } catch (error) {
-    console.error('Join league error:', error);
-    throw error;
-  }
-};
-
-// Legacy function - kept for backwards compatibility
 export const addPracticeLog = async (
+  accessToken: string,
   practiceData: {
     date: string;
     minutes: number;
@@ -303,27 +249,18 @@ export const addPracticeLog = async (
   }
 ): Promise<{ practiceLog: PracticeLog; stats: UserStats }> => {
   try {
-    // فراخوانی Edge Function - Authorization header خودکار توسط supabase اضافه می‌شود
-    const { data, error } = await supabase.functions.invoke('submit-practice', {
-      body: practiceData
+    const response = await makeServerRequest('/practice-log', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify(practiceData),
     });
-
-    if (error) {
-      console.error('Submit practice error:', error);
-      throw new Error(error.message || 'خطا در ثبت تمرین');
-    }
-
-    if (!data || !data.ok) {
-      throw new Error(data?.error || 'خطا در ثبت تمرین');
-    }
     
-    return {
-      practiceLog: data.practice_log,
-      stats: data.stats,
-    };
+    return response;
   } catch (error) {
     console.error('Add practice log error:', error);
-    throw error;
+    throw new Error(`Failed to add practice log: ${error.message}`);
   }
 };
 
@@ -351,7 +288,7 @@ export const updateSubscription = async (
 };
 
 // Migration helper: migrate data from localStorage to Supabase
-export const migrateLocalStorageData = async () => {
+export const migrateLocalStorageData = async (accessToken: string) => {
   try {
     // Get localStorage data
     const savedPracticeLogs = localStorage.getItem('doosell_practice_logs');
@@ -365,26 +302,23 @@ export const migrateLocalStorageData = async () => {
     // Migrate practice logs
     for (const log of practiceLogs) {
       try {
-        await addPracticeLog({
+        await addPracticeLog(accessToken, {
           date: log.date,
           minutes: log.minutes,
           notes: log.notes
         });
       } catch (error) {
-        console.error('Failed to migrate practice log:', error);
+        console.error('Failed to migrate practice log:', log, error);
       }
     }
 
     // Migrate subscription status
     if (hasActiveSubscription) {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.access_token) {
-          await updateSubscription(session.access_token, {
-            hasActiveSubscription,
-            subscriptionExpiryDate
-          });
-        }
+        await updateSubscription(accessToken, {
+          hasActiveSubscription,
+          subscriptionExpiryDate
+        });
       } catch (error) {
         console.error('Failed to migrate subscription:', error);
       }

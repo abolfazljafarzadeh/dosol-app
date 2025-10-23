@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
@@ -9,8 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog';
 import { useApp } from '../App';
 import { ArrowRight, User, Crown, Bell, LogOut, Edit, Calendar, Phone, Clock } from 'lucide-react';
-import { toast } from 'sonner';
-import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner@2.0.3';
 
 const SettingsScreen = () => {
   const { state, setState, navigate } = useApp();
@@ -21,91 +20,6 @@ const SettingsScreen = () => {
     lastName: state.user?.lastName || '',
     skillLevel: state.user?.skillLevel || '',
   });
-  const [isLoadingProfile, setIsLoadingProfile] = useState(false);
-
-  // Load user profile from database when component mounts
-  useEffect(() => {
-    const loadUserProfile = async () => {
-      if (!state.user?.id) return;
-      
-      console.log('🔄 Loading profile for user:', state.user.id);
-      setIsLoadingProfile(true);
-      try {
-        const { data: profile, error } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', state.user.id)
-          .single();
-
-        if (error) {
-          console.error('❌ Error loading profile:', error);
-          return;
-        }
-
-        console.log('📋 Profile data from DB:', profile);
-
-        if (profile) {
-          const { data: xpCounter } = await supabase
-            .from('xp_counters')
-            .select('*')
-            .eq('user_id', state.user.id)
-            .single();
-
-          console.log('📊 XP Counter data:', xpCounter);
-
-          const updatedUser = {
-            ...state.user,
-            firstName: profile.first_name || '',
-            lastName: profile.last_name || '',
-            instrument: profile.instrument || '',
-            skillLevel: profile.level || '',
-          };
-
-          console.log('👤 Updated user object:', updatedUser);
-
-          const updatedStats = {
-            totalPoints: xpCounter?.total_xp || 0,
-            streak: xpCounter?.streak || 0,
-            level: Math.floor((xpCounter?.total_xp || 0) / 100) + 1,
-            hasActiveSubscription: profile.is_premium || false,
-            subscriptionExpiryDate: profile.subscription_expires_at || null,
-            notificationsEnabled: profile.notifications_enabled !== false, // Default to true
-          };
-
-          // Update state
-          setState(prev => ({
-            ...prev,
-            user: updatedUser,
-            totalPoints: updatedStats.totalPoints,
-            streak: updatedStats.streak,
-            level: updatedStats.level,
-            hasActiveSubscription: updatedStats.hasActiveSubscription,
-            subscriptionExpiryDate: updatedStats.subscriptionExpiryDate,
-            notificationsEnabled: updatedStats.notificationsEnabled,
-          }));
-
-          // Update localStorage
-          localStorage.setItem('doosell_demo_user', JSON.stringify(updatedUser));
-          localStorage.setItem('doosell_demo_stats', JSON.stringify(updatedStats));
-
-          // Update editedUser state
-          setEditedUser({
-            firstName: updatedUser.firstName,
-            lastName: updatedUser.lastName,
-            skillLevel: updatedUser.skillLevel,
-          });
-
-          console.log('✅ Profile loaded and state updated');
-        }
-      } catch (error) {
-        console.error('❌ Error loading user profile:', error);
-      } finally {
-        setIsLoadingProfile(false);
-      }
-    };
-
-    loadUserProfile();
-  }, [state.user?.id]);
 
   const skillLevels = [
     { value: 'beginner', label: 'تازه‌کار' },
@@ -150,83 +64,30 @@ const SettingsScreen = () => {
     return diffDays;
   };
 
-  const handleSaveProfile = async () => {
+  const handleSaveProfile = () => {
     if (!editedUser.firstName.trim() || !editedUser.lastName.trim()) {
       toast.error('نام و نام خانوادگی الزامی است');
       return;
     }
 
-    if (!state.user?.id) {
-      toast.error('خطا در دریافت اطلاعات کاربر');
-      return;
-    }
+    const updatedUser = {
+      ...state.user!,
+      firstName: editedUser.firstName.trim(),
+      lastName: editedUser.lastName.trim(),
+      skillLevel: editedUser.skillLevel,
+    };
 
-    setIsLoadingProfile(true);
+    // Update localStorage
+    localStorage.setItem('doosell_user', JSON.stringify(updatedUser));
 
-    try {
-      // Get current session
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session) {
-        toast.error('لطفاً مجدداً وارد شوید');
-        return;
-      }
+    // Update state
+    setState(prev => ({
+      ...prev,
+      user: updatedUser,
+    }));
 
-      console.log('💾 Saving profile to database...');
-
-      // Update profile in database using register-user edge function
-      const { data, error } = await supabase.functions.invoke('register-user', {
-        body: { 
-          first_name: editedUser.firstName.trim(),
-          last_name: editedUser.lastName.trim(),
-          instrument: state.user.instrument,
-          level: editedUser.skillLevel,
-          tz: 'Asia/Tehran',
-        },
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-        }
-      });
-
-      if (error) {
-        console.error('❌ Profile update error:', error);
-        toast.error('خطا در ذخیره اطلاعات');
-        return;
-      }
-
-      console.log('✅ Profile saved to database');
-
-      const updatedUser = {
-        ...state.user,
-        firstName: editedUser.firstName.trim(),
-        lastName: editedUser.lastName.trim(),
-        skillLevel: editedUser.skillLevel,
-      };
-
-      // Update localStorage
-      localStorage.setItem('doosell_demo_user', JSON.stringify(updatedUser));
-      localStorage.setItem('doosell_demo_stats', JSON.stringify({
-        totalPoints: state.totalPoints,
-        streak: state.streak,
-        level: state.level,
-        hasActiveSubscription: state.hasActiveSubscription,
-        subscriptionExpiryDate: state.subscriptionExpiryDate,
-      }));
-
-      // Update state
-      setState(prev => ({
-        ...prev,
-        user: updatedUser,
-      }));
-
-      setIsEditing(false);
-      toast.success('اطلاعات شما با موفقیت به‌روزرسانی شد');
-    } catch (error) {
-      console.error('❌ Error saving profile:', error);
-      toast.error('خطا در ذخیره اطلاعات');
-    } finally {
-      setIsLoadingProfile(false);
-    }
+    setIsEditing(false);
+    toast.success('اطلاعات شما با موفقیت به‌روزرسانی شد');
   };
 
   const handleCancelEdit = () => {
@@ -238,47 +99,17 @@ const SettingsScreen = () => {
     setIsEditing(false);
   };
 
-  const handleNotificationToggle = async (enabled: boolean) => {
-    if (!state.user?.id) {
-      toast.error('خطا در دریافت اطلاعات کاربر');
-      return;
-    }
-
-    try {
-      // Update in database
-      const { error } = await supabase
-        .from('profiles')
-        .update({ notifications_enabled: enabled })
-        .eq('id', state.user.id);
-
-      if (error) {
-        console.error('❌ Error updating notification settings:', error);
-        toast.error('خطا در ذخیره تنظیمات');
-        return;
-      }
-
-      // Update local storage and state
-      localStorage.setItem('doosell_notifications', enabled.toString());
-      setState(prev => ({
-        ...prev,
-        notificationsEnabled: enabled,
-      }));
-      
-      toast.success(enabled ? 'اعلان‌ها فعال شد' : 'اعلان‌ها غیرفعال شد');
-    } catch (error) {
-      console.error('❌ Error updating notification settings:', error);
-      toast.error('خطا در ذخیره تنظیمات');
-    }
+  const handleNotificationToggle = (enabled: boolean) => {
+    localStorage.setItem('doosell_notifications', enabled.toString());
+    setState(prev => ({
+      ...prev,
+      notificationsEnabled: enabled,
+    }));
+    toast.success(enabled ? 'اعلان‌ها فعال شد' : 'اعلان‌ها غیرفعال شد');
   };
 
-  const handleLogout = async () => {
-    // Sign out from Supabase
-    await supabase.auth.signOut();
-    
+  const handleLogout = () => {
     // Clear all localStorage data
-    localStorage.removeItem('doosell_demo_user');
-    localStorage.removeItem('doosell_demo_stats');
-    localStorage.removeItem('doosell_demo_practice_logs');
     localStorage.removeItem('doosell_user');
     localStorage.removeItem('doosell_points');
     localStorage.removeItem('doosell_streak');
@@ -289,11 +120,11 @@ const SettingsScreen = () => {
     localStorage.removeItem('doosell_practice_days');
     localStorage.removeItem('doosell_practice_time');
 
-    // Reset state and navigate to splash
+    // Reset state
     setState({
       user: null,
       isAuthenticated: false,
-      currentPage: 'splash',
+      currentPage: 'registration',
       practicesLogs: [],
       totalPoints: 0,
       streak: 0,
@@ -304,8 +135,6 @@ const SettingsScreen = () => {
       practiceFrequency: 0,
       practiceDays: [],
       practiceTime: '20:00',
-      session: null,
-      tempPhone: undefined,
     });
 
     setShowLogoutConfirm(false);
@@ -494,31 +323,27 @@ const SettingsScreen = () => {
               </Badge>
             </div>
 
-            {state.hasActiveSubscription ? (
+            {state.hasActiveSubscription && state.subscriptionExpiryDate && (
               <>
-                {state.subscriptionExpiryDate && (
-                  <>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-600 flex items-center gap-2">
-                        <Calendar className="w-4 h-4" />
-                        تاریخ انقضا
-                      </span>
-                      <span className="text-sm">{formatDate(state.subscriptionExpiryDate)}</span>
-                    </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-600 flex items-center gap-2">
+                    <Calendar className="w-4 h-4" />
+                    تاریخ انقضا
+                  </span>
+                  <span className="text-sm">{formatDate(state.subscriptionExpiryDate)}</span>
+                </div>
 
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-600">روزهای باقی‌مانده</span>
-                      <Badge 
-                        variant={daysUntilExpiry > 7 ? "secondary" : "destructive"}
-                        className={daysUntilExpiry > 7 ? "bg-blue-100 text-blue-700" : ""}
-                      >
-                        {daysUntilExpiry} روز
-                      </Badge>
-                    </div>
-                  </>
-                )}
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-600">روزهای باقی‌مانده</span>
+                  <Badge 
+                    variant={daysUntilExpiry > 7 ? "secondary" : "destructive"}
+                    className={daysUntilExpiry > 7 ? "bg-blue-100 text-blue-700" : ""}
+                  >
+                    {daysUntilExpiry} روز
+                  </Badge>
+                </div>
               </>
-            ) : null}
+            )}
 
             <Button
               onClick={() => navigate('subscription')}

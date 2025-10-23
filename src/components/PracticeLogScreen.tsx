@@ -6,10 +6,9 @@ import { Textarea } from './ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog';
 import { useApp } from '../App';
+import { addPracticeLog } from '../utils/api';
 import { ArrowRight, Clock, Star } from 'lucide-react';
-import { toast } from 'sonner';
-import { supabase } from '../integrations/supabase/client';
-import { logPractice } from '@/services/backend';
+import { toast } from 'sonner@2.0.3';
 
 const PracticeLogScreen = () => {
   const { state, setState, navigate } = useApp();
@@ -18,23 +17,18 @@ const PracticeLogScreen = () => {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showSuccess, setShowSuccess] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [idempotencyKey, setIdempotencyKey] = useState<string>(crypto.randomUUID());
-  const [xpGained, setXpGained] = useState(0);
 
   const quickMinutes = [15, 30, 45, 60];
   
-  // Check today's logs - from state populated by server
+  // Check today's logs
   const today = new Date().toISOString().split('T')[0];
-  const todayLogs = state.practicesLogs.filter(log => {
-    const logDate = log.date.includes('T') ? log.date.split('T')[0] : log.date;
-    return logDate === today;
-  });
+  const todayLogs = state.practicesLogs.filter(log => log.date === today);
   const todayMinutes = todayLogs.reduce((sum, log) => sum + log.minutes, 0);
   const todayEntries = todayLogs.length;
 
-  // XP cap: max 160 per day
-  const xpToday = state.xpToday || 0;
-  const hasReachedDailyCap = xpToday >= 160;
+  // Calculate points preview
+  const minutesNum = parseInt(minutes) || 0;
+  const pointsPreview = Math.floor(minutesNum / 15) * 10;
 
   const motivationalMessages = [
     "همین که امروز تمرین کردی، عالیه",
@@ -71,144 +65,70 @@ const PracticeLogScreen = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Guard: Check session before submission
-    if (!state.session?.user?.id) {
-      toast.error('لطفاً ابتدا وارد شوید');
-      setState(prev => ({ ...prev, currentPage: 'phone-input', isAuthenticated: false }));
-      return;
-    }
-    
     if (validateForm() && !isLoading) {
       setIsLoading(true);
       
       try {
         const minutesNum = parseInt(minutes);
         
-        // Call log-practice Edge Function with idempotency key
-        const response = await logPractice({
-          minutes: minutesNum,
-          note: notes.trim() || undefined,
-          idempotencyKey,
-        });
+        if (state.session?.access_token) {
+          // Use Supabase API
+          console.log('Adding practice log via Supabase API...');
+          const response = await addPracticeLog(state.session.access_token, {
+            date: today,
+            minutes: minutesNum,
+            notes: notes.trim()
+          });
 
-        if (!response.ok) {
-          // Handle error codes from backend
-          if (response.code === 'LEAGUE_LOCKED') {
-            toast.error('لیگ بسته است؛ امتیاز قابل افزایش نیست.');
-          } else if (response.code === 'DAILY_LIMIT') {
-            toast.error(response.message || 'حداکثر دو ثبت یا ۲۴۰ دقیقه در روز.');
-          } else if (response.code === 'MIN_DURATION') {
-            toast.error('حداقل ۵ دقیقه.');
-          } else {
-            toast.error(response.message || 'خطای شبکه/سرور؛ دوباره تلاش کنید.');
-          }
-          setIsLoading(false);
-          return;
-        }
+          // Update state with server response
+          setState(prev => ({
+            ...prev,
+            practicesLogs: [...prev.practicesLogs, response.practiceLog],
+            totalPoints: response.stats.totalPoints,
+            streak: response.stats.streak,
+            level: response.stats.level,
+            hasActiveSubscription: response.stats.hasActiveSubscription,
+            subscriptionExpiryDate: response.stats.subscriptionExpiryDate,
+          }));
 
-        // Update state from server response - NO CLIENT CALCULATIONS
-        setState(prev => ({
-          ...prev,
-          totalPoints: response.xpTotal || prev.totalPoints,
-          streak: response.streak?.current || prev.streak,
-          xpToday: response.xpToday || 0,
-          level: response.level || Math.floor((response.xpTotal || 0) / 500) + 1,
-        }));
+          toast.success('تمرین با موفقیت ثبت شد!');
+        } else {
+          // Fallback to localStorage (for backwards compatibility)
+          console.log('Adding practice log via localStorage fallback...');
+          const points = Math.floor(minutesNum / 15) * 10;
+          
+          const newLog = {
+            id: Date.now().toString(),
+            date: today,
+            minutes: minutesNum,
+            notes: notes.trim(),
+            points,
+          };
 
-        setXpGained(response.xpGained || 0);
-
-        // Refresh practice logs from database
-        if (state.session?.user?.id) {
-          const { data: logs } = await supabase
-            .from('practice_logs')
-            .select('*')
-            .eq('user_id', state.session.user.id)
-            .order('practiced_on', { ascending: false });
-
-          if (logs) {
-            const formattedLogs = logs.map(log => ({
-              id: log.id,
-              date: log.practiced_on,
-              minutes: log.minutes,
-              notes: log.note || '',
-              points: Math.floor(log.minutes / 15) * 10,
-            }));
+          setState(prev => {
+            const newTotalPoints = prev.totalPoints + points;
+            const newLogs = [...prev.practicesLogs, newLog];
             
-            setState(prev => ({
+            // Update localStorage
+            localStorage.setItem('doosell_points', newTotalPoints.toString());
+            localStorage.setItem('doosell_practice_logs', JSON.stringify(newLogs));
+            
+            return {
               ...prev,
-              practicesLogs: formattedLogs
-            }));
-          }
+              practicesLogs: newLogs,
+              totalPoints: newTotalPoints,
+            };
+          });
 
-          // Fetch new notifications (medals, challenges)
-          const { data: newNotifications } = await supabase
-            .from('notifications')
-            .select('*')
-            .eq('user_id', state.session.user.id)
-            .eq('status', 'queued')
-            .order('created_at', { ascending: false })
-            .limit(10);
-
-          if (newNotifications && newNotifications.length > 0) {
-            // Show notifications with toasts
-            newNotifications.forEach((notif: any) => {
-              if (notif.type === 'medal_unlocked') {
-                const payload = notif.payload as any;
-                toast.success(`🏅 مدال جدید: ${payload.medal_title || 'مدال'}`, {
-                  description: payload.xp_reward ? `+${payload.xp_reward} امتیاز` : undefined,
-                });
-              } else if (notif.type === 'practice_logged') {
-                // Already shown via toast.success below
-              }
-            });
-
-            // Mark notifications as sent (optional - for tracking)
-            await supabase
-              .from('notifications')
-              .update({ status: 'sent' })
-              .in('id', newNotifications.map((n: any) => n.id));
-          }
+          toast.success('تمرین با موفقیت ثبت شد!');
         }
-
-        toast.success('تمرین با موفقیت ثبت شد!');
 
         // Show success modal
         setShowSuccess(true);
-        // Reset form
-        setMinutes('');
-        setNotes('');
-        setIdempotencyKey(crypto.randomUUID());
         
-      } catch (err: any) {
-        console.error('Practice log submission error:', err);
-        
-        // Handle auth errors
-        if (err?.message === 'AUTH_REQUIRED' || err?.message === 'SESSION_EXPIRED') {
-          toast.error('لطفاً دوباره وارد شوید');
-          setState(prev => ({ ...prev, currentPage: 'phone-input', isAuthenticated: false }));
-          return;
-        }
-        
-        // Enhanced error reporting with status and body
-        const status = err?.status;
-        const code = err?.body?.code;
-        const msg = err?.body?.message || err?.message;
-        
-        console.warn('logPractice failed:', { status, code, msg, fullError: err });
-        
-        // Show meaningful error based on code or status
-        if (code === 'LEAGUE_LOCKED') {
-          toast.error('لیگ بسته است؛ امتیاز قابل افزایش نیست.');
-        } else if (code === 'DAILY_LIMIT') {
-          toast.error(msg || 'حداکثر دو ثبت یا ۲۴۰ دقیقه در روز.');
-        } else if (code === 'MIN_DURATION') {
-          toast.error('حداقل ۵ دقیقه.');
-        } else if (status === 401 || status === 403) {
-          toast.error('خطای احراز هویت - لطفاً دوباره وارد شوید');
-          setState(prev => ({ ...prev, currentPage: 'phone-input', isAuthenticated: false }));
-        } else {
-          toast.error(msg || `خطای سرور (${status || 'unknown'})`);
-        }
+      } catch (error) {
+        console.error('Practice log submission error:', error);
+        toast.error(`خطا در ثبت تمرین: ${error.message}`);
       } finally {
         setIsLoading(false);
       }
@@ -285,14 +205,14 @@ const PracticeLogScreen = () => {
             </div>
           </div>
 
-          {/* XP Cap Warning */}
-          {hasReachedDailyCap && (
-            <Card className="rounded-2xl shadow-sm bg-gradient-to-br from-orange-50 to-red-50 border-orange-200">
+          {/* Points Preview */}
+          {minutesNum > 0 && (
+            <Card className="rounded-2xl shadow-sm bg-gradient-to-br from-amber-50 to-yellow-50 border-amber-200">
               <CardContent className="p-4">
-                <div className="text-center text-orange-700">
-                  <Star className="w-5 h-5 mx-auto mb-2 text-orange-500" />
-                  <span className="text-sm">
-                    امروز به سقف روزانه (۱۶۰ XP) رسیده‌اید
+                <div className="flex items-center justify-center gap-3">
+                  <Star className="w-5 h-5 text-amber-500" />
+                  <span className="text-lg text-amber-700">
+                    {minutesNum} دقیقه = {pointsPreview} امتیاز
                   </span>
                 </div>
               </CardContent>
@@ -327,7 +247,7 @@ const PracticeLogScreen = () => {
           <Button
             type="submit"
             className="w-full bg-gradient-to-r from-orange-400 to-amber-400 hover:from-orange-500 hover:to-amber-500 text-white rounded-2xl h-12 text-lg shadow-lg"
-            disabled={todayEntries >= 2 || isLoading || hasReachedDailyCap}
+            disabled={todayEntries >= 2 || isLoading}
           >
             <Clock className="w-5 h-5 ml-2" />
             {isLoading ? 'در حال ثبت...' : 'ثبت تمرین'}
@@ -369,7 +289,7 @@ const PracticeLogScreen = () => {
             <div className="bg-gradient-to-br from-amber-50 to-yellow-50 rounded-xl p-4 border border-amber-200">
               <div className="flex items-center justify-center gap-2 text-amber-700">
                 <Star className="w-5 h-5" />
-                <span className="text-lg">+{xpGained} امتیاز دریافت کردید</span>
+                <span className="text-lg">+{pointsPreview} امتیاز دریافت کردید</span>
               </div>
             </div>
             <Button 

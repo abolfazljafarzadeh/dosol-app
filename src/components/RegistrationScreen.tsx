@@ -6,8 +6,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog';
 import { useApp } from '../App';
 import { registerUser, loginUser } from '../utils/api';
-import { toast } from 'sonner';
-import doosellLogo from '@/assets/doosell-logo.svg';
+import { toast } from 'sonner@2.0.3';
+import doosellLogo from 'figma:asset/b58b06cddb1628092c6db84c1360a4a9e7aca31b.png';
 
 const RegistrationScreen = () => {
   const { state, setState, navigate } = useApp();

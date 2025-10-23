@@ -3,34 +3,15 @@ import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { useApp } from '../App';
-import { ArrowRight, Trophy, Clock, Crown, Star, Users, Lock, ShoppingBag, Loader2 } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
-import { toPersianDigits } from './utils/persianUtils';
+import { ArrowRight, Trophy, Clock, Crown, Star, Users } from 'lucide-react';
 
 interface LeaguePlayer {
-  userId: string;
+  id: string;
   name: string;
   instrument: string;
   weeklyPoints: number;
   rank: number;
   isCurrentUser?: boolean;
-}
-
-interface UserStatus {
-  rank: number | null;
-  weeklyPoints: number;
-  pointsToNext: number;
-  nextPlayerRank: number | null;
-}
-
-interface LeagueData {
-  ok: boolean;
-  hasPracticedThisWeek: boolean;
-  inLeague: boolean;
-  weekStart: string;
-  weekEnd: string;
-  leaguePlayers: LeaguePlayer[];
-  userStatus: UserStatus | null;
 }
 
 interface TimeRemaining {
@@ -43,58 +24,21 @@ interface TimeRemaining {
 const WeeklyLeagueScreen = () => {
   const { state, navigate } = useApp();
   const [timeRemaining, setTimeRemaining] = useState<TimeRemaining>({ days: 0, hours: 0, minutes: 0, seconds: 0 });
-  const [leagueData, setLeagueData] = useState<LeagueData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [leagueEndTime, setLeagueEndTime] = useState<Date | null>(null);
 
-  // Fetch league data
+  // Mock league end time (Friday 23:59)
+  const getNextFridayEndTime = () => {
+    const now = new Date();
+    const dayOfWeek = now.getDay(); // 0 = Sunday, 6 = Saturday
+    const daysToFriday = dayOfWeek === 5 ? 7 : (5 - dayOfWeek + 7) % 7; // Days until next Friday
+    const nextFriday = new Date(now);
+    nextFriday.setDate(now.getDate() + daysToFriday);
+    nextFriday.setHours(23, 59, 59, 999);
+    return nextFriday;
+  };
+
+  const leagueEndTime = getNextFridayEndTime();
+
   useEffect(() => {
-    const fetchLeagueData = async () => {
-      try {
-        setLoading(true);
-        const { data: sessionData } = await supabase.auth.getSession();
-        
-        if (!sessionData?.session) {
-          setLoading(false);
-          return;
-        }
-
-        const response = await supabase.functions.invoke('get-weekly-league', {
-          headers: {
-            Authorization: `Bearer ${sessionData.session.access_token}`
-          }
-        });
-
-        if (response.error) {
-          console.error('Error fetching league:', response.error);
-          setLoading(false);
-          return;
-        }
-
-        const data: LeagueData = response.data;
-        setLeagueData(data);
-
-        // Calculate league end time (Friday 23:59)
-        if (data.weekEnd) {
-          const endDate = new Date(data.weekEnd);
-          endDate.setHours(23, 59, 59, 999);
-          setLeagueEndTime(endDate);
-        }
-
-        setLoading(false);
-      } catch (error) {
-        console.error('Error fetching league:', error);
-        setLoading(false);
-      }
-    };
-
-    fetchLeagueData();
-  }, []);
-
-  // Timer effect
-  useEffect(() => {
-    if (!leagueEndTime) return;
-
     const calculateTimeRemaining = () => {
       const now = new Date().getTime();
       const difference = leagueEndTime.getTime() - now;
@@ -114,11 +58,30 @@ const WeeklyLeagueScreen = () => {
     calculateTimeRemaining();
     const timer = setInterval(calculateTimeRemaining, 1000);
     return () => clearInterval(timer);
-  }, [leagueEndTime]);
+  }, []);
 
   const formatTime = (num: number) => {
-    return toPersianDigits(num.toString().padStart(2, '0'));
+    return new Intl.NumberFormat('fa-IR').format(num).padStart(2, '۰');
   };
+
+  // Mock league data
+  const leaguePlayers: LeaguePlayer[] = [
+    { id: '1', name: 'احمد رضای��', instrument: 'پیانو', weeklyPoints: 420, rank: 1 },
+    { id: '2', name: 'مریم احمدی', instrument: 'ویولن', weeklyPoints: 380, rank: 2 },
+    { id: '3', name: 'علی محمدی', instrument: 'گیتار', weeklyPoints: 350, rank: 3 },
+    { id: '4', name: 'زهرا کریمی', instrument: 'سنتور', weeklyPoints: 320, rank: 4 },
+    { id: '5', name: 'حسین نوری', instrument: 'تار', weeklyPoints: 290, rank: 5 },
+    { id: state.user?.id || '6', name: `${state.user?.firstName} ${state.user?.lastName}`, instrument: state.user?.instrument || 'پیانو', weeklyPoints: 180, rank: 6, isCurrentUser: true },
+    { id: '7', name: 'فاطمه یوسفی', instrument: 'کمانچه', weeklyPoints: 160, rank: 7 },
+    { id: '8', name: 'محمد حسینی', instrument: 'عود', weeklyPoints: 140, rank: 8 },
+    { id: '9', name: 'ساره ملکی', instrument: 'پیانو', weeklyPoints: 120, rank: 9 },
+    { id: '10', name: 'رضا جعفری', instrument: 'ویولن', weeklyPoints: 100, rank: 10 },
+  ];
+
+  const currentUserIndex = leaguePlayers.findIndex(player => player.isCurrentUser);
+  const currentUser = leaguePlayers[currentUserIndex];
+  const nextPlayer = currentUserIndex > 0 ? leaguePlayers[currentUserIndex - 1] : null;
+  const pointsToNext = nextPlayer ? nextPlayer.weeklyPoints - currentUser.weeklyPoints : 0;
 
   const getRankIcon = (rank: number) => {
     switch (rank) {
@@ -146,21 +109,13 @@ const WeeklyLeagueScreen = () => {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-orange-50 via-amber-50 to-yellow-50 flex items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="w-12 h-12 animate-spin text-orange-500 mx-auto mb-4" />
-          <p className="text-gray-600">در حال بارگذاری لیگ...</p>
-        </div>
-      </div>
-    );
-  }
-
-  const leaguePlayers = leagueData?.leaguePlayers || [];
-  const userStatus = leagueData?.userStatus;
-  const hasPracticedThisWeek = leagueData?.hasPracticedThisWeek || false;
-  const inLeague = leagueData?.inLeague || false;
+  // Check if user has practiced this week
+  const hasPracticedThisWeek = state.practicesLogs.some(log => {
+    const logDate = new Date(log.date);
+    const today = new Date();
+    const weekStart = new Date(today.setDate(today.getDate() - today.getDay() + 6)); // Saturday
+    return logDate >= weekStart;
+  });
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 via-amber-50 to-yellow-50">
@@ -213,9 +168,7 @@ const WeeklyLeagueScreen = () => {
         </div>
       </div>
 
-      {/* Content with conditional blur */}
-      <div className="relative">
-        <div className={`p-6 space-y-6 ${!state.hasActiveSubscription ? 'blur-sm pointer-events-none' : ''}`}>
+      <div className="p-6 space-y-6">
         {!hasPracticedThisWeek && (
           <Card className="rounded-2xl shadow-sm bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200">
             <CardContent className="p-4">
@@ -233,24 +186,24 @@ const WeeklyLeagueScreen = () => {
         )}
 
         {/* User Status */}
-        {hasPracticedThisWeek && inLeague && userStatus && (
+        {hasPracticedThisWeek && currentUser && (
           <Card className="rounded-2xl shadow-sm bg-gradient-to-br from-amber-50 to-yellow-50 border-amber-200">
             <CardContent className="p-4">
               <div className="text-center">
                 <h4 className="text-amber-800 mb-2">موقعیت شما در لیگ</h4>
                 <div className="flex items-center justify-center gap-4 mb-2">
                   <div className="text-center">
-                    <div className="text-lg text-amber-700">رتبه {toPersianDigits(userStatus.rank || 0)}</div>
-                    <div className="text-xs text-amber-600">از {toPersianDigits(leaguePlayers.length)} نفر</div>
+                    <div className="text-lg text-amber-700">رتبه {currentUser.rank}</div>
+                    <div className="text-xs text-amber-600">از ۱۰ نفر</div>
                   </div>
                   <div className="text-center">
-                    <div className="text-lg text-amber-700">{toPersianDigits(userStatus.weeklyPoints)}</div>
+                    <div className="text-lg text-amber-700">{currentUser.weeklyPoints}</div>
                     <div className="text-xs text-amber-600">امتیاز هفتگی</div>
                   </div>
                 </div>
-                {userStatus.pointsToNext > 0 && userStatus.nextPlayerRank && (
+                {nextPlayer && (
                   <p className="text-amber-700 text-sm">
-                    {toPersianDigits(userStatus.pointsToNext)} امتیاز تا رتبه {toPersianDigits(userStatus.nextPlayerRank)}
+                    {pointsToNext} امتیاز تا رتبه {nextPlayer.rank}
                   </p>
                 )}
               </div>
@@ -267,52 +220,44 @@ const WeeklyLeagueScreen = () => {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {leaguePlayers.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
-                <Users className="w-12 h-12 mx-auto mb-3 text-gray-400" />
-                <p>هنوز کاربری در این لیگ نیست</p>
-                <p className="text-sm mt-1">اولین نفر باش!</p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {leaguePlayers.map((player) => (
-                  <div
-                    key={player.userId}
-                    className={`flex items-center gap-3 p-3 rounded-xl ${
-                      player.isCurrentUser 
-                        ? 'bg-gradient-to-r from-orange-100 to-amber-100 border-2 border-orange-300' 
-                        : 'bg-gray-50'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <Badge className={getRankBadgeColor(player.rank)}>
-                        {toPersianDigits(player.rank)}
-                      </Badge>
-                      {getRankIcon(player.rank)}
-                    </div>
-                    
-                    <div className="flex-1">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <h4 className={`text-sm ${player.isCurrentUser ? 'font-medium text-orange-800' : ''}`}>
-                            {player.name}
-                          </h4>
-                          <p className="text-xs text-gray-600">{player.instrument}</p>
-                        </div>
-                        <div className="text-left">
-                          <div className="flex items-center gap-1">
-                            <Star className="w-4 h-4 text-amber-500" />
-                            <span className={`text-sm ${player.isCurrentUser ? 'font-medium text-orange-800' : ''}`}>
-                              {toPersianDigits(player.weeklyPoints)}
-                            </span>
-                          </div>
+            <div className="space-y-3">
+              {leaguePlayers.map((player, index) => (
+                <div
+                  key={player.id}
+                  className={`flex items-center gap-3 p-3 rounded-xl ${
+                    player.isCurrentUser 
+                      ? 'bg-gradient-to-r from-orange-100 to-amber-100 border-2 border-orange-300' 
+                      : 'bg-gray-50'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <Badge className={getRankBadgeColor(player.rank)}>
+                      {player.rank}
+                    </Badge>
+                    {getRankIcon(player.rank)}
+                  </div>
+                  
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className={`text-sm ${player.isCurrentUser ? 'font-medium text-orange-800' : ''}`}>
+                          {player.name}
+                        </h4>
+                        <p className="text-xs text-gray-600">{player.instrument}</p>
+                      </div>
+                      <div className="text-left">
+                        <div className="flex items-center gap-1">
+                          <Star className="w-4 h-4 text-amber-500" />
+                          <span className={`text-sm ${player.isCurrentUser ? 'font-medium text-orange-800' : ''}`}>
+                            {player.weeklyPoints}
+                          </span>
                         </div>
                       </div>
                     </div>
                   </div>
-                ))}
-              </div>
-            )}
+                </div>
+              ))}
+            </div>
           </CardContent>
         </Card>
 
@@ -336,43 +281,10 @@ const WeeklyLeagueScreen = () => {
             </div>
             <div className="flex items-start gap-2 text-sm text-blue-700">
               <div className="w-1.5 h-1.5 bg-blue-500 rounded-full mt-2 flex-shrink-0"></div>
-              <span>امتیازهای لیگ همان امتیازات تمرین روزانه هستند</span>
-            </div>
-            <div className="flex items-start gap-2 text-sm text-blue-700">
-              <div className="w-1.5 h-1.5 bg-blue-500 rounded-full mt-2 flex-shrink-0"></div>
-              <span>جدول رده‌بندی با هر تمرین ثبت‌شده به‌صورت خودکار به‌روز می‌شود</span>
-            </div>
-            <div className="flex items-start gap-2 text-sm text-blue-700">
-              <div className="w-1.5 h-1.5 bg-blue-500 rounded-full mt-2 flex-shrink-0"></div>
-              <span>فقط کاربران فعال که این هفته تمرین کرده‌اند در جدول نمایش داده می‌شوند</span>
+              <span>جدول رده‌بندی با هر تمرین ثبت‌شده به‌روزرسانی می‌شود</span>
             </div>
           </CardContent>
         </Card>
-        </div>
-
-        {/* Overlay for non-subscribers */}
-        {!state.hasActiveSubscription && (
-          <div className="fixed inset-0 flex items-center justify-center z-50">
-            <Card className="rounded-2xl shadow-lg border-0 bg-gradient-to-br from-orange-50 to-amber-50 max-w-sm mx-4">
-              <CardContent className="p-8 text-center">
-                <div className="w-20 h-20 mx-auto bg-gradient-to-br from-orange-200 to-amber-200 rounded-2xl flex items-center justify-center mb-6">
-                  <Lock className="w-10 h-10 text-orange-600" />
-                </div>
-                <h3 className="text-xl mb-4 text-gray-800">دسترسی محدود</h3>
-                <p className="text-gray-600 mb-6 leading-relaxed">
-                  برای شرکت در لیگ هفتگی و رقابت با سایر کاربران، نیاز به اشتراک دارید.
-                </p>
-                <Button
-                  onClick={() => navigate('subscription')}
-                  className="w-full bg-gradient-to-r from-orange-400 to-amber-400 hover:from-orange-500 hover:to-amber-500 text-white rounded-xl h-12 shadow-lg"
-                >
-                  <ShoppingBag className="w-5 h-5 ml-2" />
-                  خرید اشتراک
-                </Button>
-              </CardContent>
-            </Card>
-          </div>
-        )}
       </div>
     </div>
   );
