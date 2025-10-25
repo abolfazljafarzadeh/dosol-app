@@ -1,102 +1,38 @@
-import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.0'
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
+import { serve } from "https://deno.land/std@0.177.0/http/server.ts"
 
 serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
-  }
-
   try {
-    const { phone_number, otp_code } = await req.json()
-    
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    const supabase = createClient(supabaseUrl, supabaseKey)
-    
-    // Check OTP validity
-    const { data: otpData, error: otpError } = await supabase
-      .from('otp_codes')
-      .select('*')
-      .eq('phone_number', phone_number)
-      .eq('otp_code', otp_code)
-      .eq('is_used', false)
-      .gte('expires_at', new Date().toISOString())
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .single()
-    
-    if (otpError || !otpData) {
-      throw new Error('کد تایید نامعتبر یا منقضی شده است')
+    const { phone, code } = await req.json()
+    if (!phone || !code) return new Response("Bad Request", { status: 400 })
+
+    // بررسی در جدول otps
+    const { data } = await fetch(`${Deno.env.get("SUPABASE_URL")}/rest/v1/otps?phone=eq.${phone}&code=eq.${code}`, {
+      headers: {
+        apikey: Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+      },
+    }).then((r) => r.json())
+
+    if (!data?.length) {
+      return new Response(JSON.stringify({ error: "کد اشتباه است" }), { status: 400 })
     }
-    
-    // Mark OTP as used
-    await supabase
-      .from('otp_codes')
-      .update({ is_used: true })
-      .eq('id', otpData.id)
-    
-    // Check if user exists
-    const { data: userData } = await supabase
-      .from('users')
-      .select('*')
-      .eq('phone_number', phone_number)
-      .single()
-    
-    let user = userData
-    let isNewUser = false
-    
-    if (!userData) {
-      // Create new user with basic info
-      isNewUser = true
-      const { data: newUser, error: userError } = await supabase
-        .from('users')
-        .insert({
-          phone_number,
-          first_name: 'کاربر',
-          last_name: 'جدید',
-          instrument: 'piano',
-          skill_level: 'beginner'
-        })
-        .select()
-        .single()
-      
-      if (userError) {
-        console.error('User creation error:', userError)
-        throw new Error('خطا در ایجاد کاربر')
-      }
-      
-      user = newUser
+
+    // بررسی زمان انقضا
+    const otp = data[0]
+    if (new Date(otp.expires_at) < new Date()) {
+      return new Response(JSON.stringify({ error: "کد منقضی شده است" }), { status: 400 })
     }
-    
-    return new Response(
-      JSON.stringify({ 
-        success: true, 
-        user,
-        isNewUser,
-        message: isNewUser ? 'ثبت نام موفق' : 'ورود موفق'
-      }),
-      { 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200
-      }
-    )
-    
-  } catch (error: any) {
-    console.error('Error:', error)
-    return new Response(
-      JSON.stringify({ 
-        success: false, 
-        error: error.message 
-      }),
-      { 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 400
-      }
-    )
+
+    // حذف کد استفاده‌شده
+    await fetch(`${Deno.env.get("SUPABASE_URL")}/rest/v1/otps?phone=eq.${phone}`, {
+      method: "DELETE",
+      headers: {
+        apikey: Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+      },
+    })
+
+    return new Response(JSON.stringify({ success: true }), { headers: { "Content-Type": "application/json" } })
+  } catch (err) {
+    console.error(err)
+    return new Response(JSON.stringify({ error: err.message }), { status: 500 })
   }
 })
