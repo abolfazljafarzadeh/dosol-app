@@ -1,4 +1,5 @@
-import { supabase, makeServerRequest } from './supabase/client';
+import { supabase } from './supabase/client';
+import { projectId } from './supabase/info';
 
 export interface User {
   id: string;
@@ -26,37 +27,57 @@ export interface UserStats {
   subscriptionExpiryDate: string | null;
 }
 
-// Check if user exists
-export const checkUserExists = async (phone: string): Promise<boolean> => {
+const SUPABASE_URL = `https://${projectId}.supabase.co`;
+
+// =============================================
+// OTP Functions (استفاده از کاوه‌نگار)
+// =============================================
+
+/**
+ * ارسال کد OTP به شماره موبایل
+ */
+export const sendOTP = async (phone: string): Promise<{ success: boolean; message: string }> => {
   try {
-    const response = await makeServerRequest('/check-user', {
-      method: 'POST',
-      body: JSON.stringify({ phone }),
-    });
+    console.log('📱 Sending OTP to:', phone);
     
-    return response.exists;
-  } catch (error) {
-    console.error('Check user error:', error);
-    return false;
+    // فراخوانی Edge Function برای ارسال OTP
+    const { data, error } = await supabase.functions.invoke('send-otp', {
+      body: { phone }
+    });
+
+    if (error) {
+      console.error('❌ Send OTP error:', error);
+      return {
+        success: false,
+        message: error.message || 'خطا در ارسال کد تأیید'
+      };
+    }
+
+    if (data?.error) {
+      console.error('❌ Send OTP failed:', data.error);
+      return {
+        success: false,
+        message: data.error
+      };
+    }
+
+    console.log('✅ OTP sent successfully');
+    return {
+      success: true,
+      message: 'کد تأیید ارسال شد'
+    };
+  } catch (error: any) {
+    console.error('❌ Send OTP exception:', error);
+    return {
+      success: false,
+      message: error.message || 'خطا در ارسال کد تأیید'
+    };
   }
 };
 
-// Send OTP to phone number
-export const sendOTP = async (phone: string): Promise<{ success: boolean; message: string }> => {
-  // Mock implementation for development
-  console.log('📱 Mock OTP sent to:', phone);
-  console.log('🔐 Mock OTP Code: 123456');
-  
-  // Simulate network delay
-  await new Promise(resolve => setTimeout(resolve, 1000));
-  
-  return {
-    success: true,
-    message: "کد تأیید ارسال شد"
-  };
-};
-
-// Verify OTP
+/**
+ * تأیید کد OTP
+ */
 export const verifyOTP = async (phone: string, otp: string): Promise<{ 
   success: boolean; 
   userExists: boolean;
@@ -64,151 +85,488 @@ export const verifyOTP = async (phone: string, otp: string): Promise<{
   stats?: UserStats;
   practiceLogs?: PracticeLog[];
   session?: any;
+  message?: string;
 }> => {
-  // Mock implementation for development
-  console.log('🔐 Verifying OTP:', otp, 'for phone:', phone);
-  
-  // Simulate network delay
-  await new Promise(resolve => setTimeout(resolve, 1500));
-  
-  // Accept demo OTP: 123456
-  if (otp !== '123456') {
-    return {
-      success: false,
-      userExists: false,
-      message: "کد تأیید نامعتبر است"
-    };
-  }
-  
-  // Check if it's a demo existing user (09123456789)
-  const isExistingUser = phone === '09123456789';
-  
-  if (isExistingUser) {
-    // Mock existing user data
-    const mockUser: User = {
-      id: 'demo-user-123',
-      firstName: 'علی',
-      lastName: 'موسوی',
-      phone: phone,
-      instrument: 'piano',
-      skillLevel: 'intermediate',
-      registeredAt: '2024-01-15T10:30:00Z'
-    };
+  try {
+    console.log('🔐 Verifying OTP for phone:', phone);
     
-    const mockStats: UserStats = {
-      totalPoints: 1250,
-      streak: 7,
-      level: 2,
-      hasActiveSubscription: true,
-      subscriptionExpiryDate: '2025-02-15T00:00:00Z'
+    // فراخوانی Edge Function برای تأیید OTP
+    const { data, error } = await supabase.functions.invoke('verify-otp', {
+      body: { phone, code: otp }
+    });
+
+    if (error) {
+      console.error('❌ Verify OTP error:', error);
+      return {
+        success: false,
+        userExists: false,
+        message: error.message || 'خطا در تأیید کد'
+      };
+    }
+
+    if (data?.error) {
+      console.error('❌ Verify OTP failed:', data.error);
+      return {
+        success: false,
+        userExists: false,
+        message: data.error
+      };
+    }
+
+    if (!data?.success) {
+      return {
+        success: false,
+        userExists: false,
+        message: 'کد تأیید نامعتبر است'
+      };
+    }
+
+    console.log('✅ OTP verified successfully');
+
+    // بررسی وجود کاربر در دیتابیس
+    const { data: userData, error: userError } = await supabase
+      .from('users')
+      .select('*, user_stats(*)')
+      .eq('phone', phone)
+      .single();
+
+    if (userError && userError.code !== 'PGRST116') {
+      // PGRST116 means no rows returned
+      console.error('❌ User lookup error:', userError);
+      throw userError;
+    }
+
+    if (!userData) {
+      // کاربر جدید است
+      console.log('👤 New user detected');
+      return {
+        success: true,
+        userExists: false
+      };
+    }
+
+    // کاربر موجود است - بارگذاری اطلاعات کامل
+    console.log('👤 Existing user found');
+
+    // دریافت لاگ‌های تمرین
+    const { data: practiceLogsData, error: logsError } = await supabase
+      .from('practice_logs')
+      .select('*')
+      .eq('user_id', userData.id)
+      .order('date', { ascending: false })
+      .limit(30);
+
+    if (logsError) {
+      console.error('⚠️ Practice logs error:', logsError);
+    }
+
+    const user: User = {
+      id: userData.id,
+      firstName: userData.first_name,
+      lastName: userData.last_name,
+      phone: userData.phone,
+      instrument: userData.instrument,
+      skillLevel: userData.skill_level,
+      registeredAt: userData.created_at
     };
-    
-    const mockLogs: PracticeLog[] = [
-      {
-        id: '1',
-        date: new Date().toISOString().split('T')[0],
-        minutes: 45,
-        notes: 'تمرین گام‌ها و آرپژ',
-        points: 30
-      },
-      {
-        id: '2',
-        date: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-        minutes: 60,
-        notes: 'کار روی قطعه جدید',
-        points: 40
-      }
-    ];
-    
+
+    const stats: UserStats = {
+      totalPoints: userData.user_stats?.total_points || 0,
+      streak: userData.user_stats?.streak || 0,
+      level: userData.user_stats?.level || 1,
+      hasActiveSubscription: userData.user_stats?.has_active_subscription || false,
+      subscriptionExpiryDate: userData.user_stats?.subscription_expiry_date || null
+    };
+
+    const practiceLogs: PracticeLog[] = (practiceLogsData || []).map(log => ({
+      id: log.id,
+      date: log.date,
+      minutes: log.minutes,
+      notes: log.notes,
+      points: log.points
+    }));
+
+    // ایجاد session برای کاربر
+    const session = {
+      user: { id: userData.id },
+      access_token: 'authenticated'
+    };
+
     return {
       success: true,
       userExists: true,
-      user: mockUser,
-      stats: mockStats,
-      practiceLogs: mockLogs,
-      session: { user: mockUser, access_token: 'mock-token' }
+      user,
+      stats,
+      practiceLogs,
+      session
     };
-  } else {
-    // New user
+  } catch (error: any) {
+    console.error('❌ Verify OTP exception:', error);
     return {
-      success: true,
-      userExists: false
+      success: false,
+      userExists: false,
+      message: error.message || 'خطا در تأیید کد'
     };
   }
 };
 
-// Auth functions
+// =============================================
+// User Management
+// =============================================
+
+/**
+ * ثبت‌نام کاربر جدید
+ */
 export const registerUser = async (userData: {
   firstName: string;
   lastName: string;
   phone: string;
   instrument: string;
   skillLevel: string;
-}): Promise<{ user: User; authUser: any; session?: any; stats?: UserStats; practiceLogs?: PracticeLog[]; userExists?: boolean }> => {
-  // Mock implementation for development
-  console.log('📝 Mock registering user:', userData);
-  
-  // Simulate network delay
-  await new Promise(resolve => setTimeout(resolve, 2000));
-  
-  const mockUser: User = {
-    id: `demo-user-${Date.now()}`,
-    firstName: userData.firstName,
-    lastName: userData.lastName,
-    phone: userData.phone,
-    instrument: userData.instrument,
-    skillLevel: userData.skillLevel,
-    registeredAt: new Date().toISOString()
-  };
-  
-  const mockStats: UserStats = {
-    totalPoints: 0,
-    streak: 0,
-    level: 1,
-    hasActiveSubscription: false,
-    subscriptionExpiryDate: null
-  };
-  
-  return {
-    user: mockUser,
-    authUser: mockUser,
-    session: { user: mockUser, access_token: 'mock-token' },
-    stats: mockStats,
-    practiceLogs: [],
-    userExists: false
-  };
-};
-
-export const loginUser = async (phone: string): Promise<{
-  user: User;
-  stats: UserStats;
-  practiceLogs: PracticeLog[];
-  authUser: any;
-  session: any;
+}): Promise<{ 
+  user: User; 
+  authUser: any; 
+  session?: any; 
+  stats?: UserStats; 
+  practiceLogs?: PracticeLog[]; 
+  userExists?: boolean 
 }> => {
   try {
-    const response = await makeServerRequest('/login', {
-      method: 'POST',
-      body: JSON.stringify({ phone }),
-    });
-    
-    return response;
-  } catch (error) {
-    console.error('Login error:', error);
-    throw new Error(`Login failed: ${error.message}`);
+    console.log('📝 Registering new user:', userData.phone);
+
+    // ایجاد کاربر جدید
+    const { data: newUser, error: userError } = await supabase
+      .from('users')
+      .insert({
+        phone: userData.phone,
+        first_name: userData.firstName,
+        last_name: userData.lastName,
+        instrument: userData.instrument,
+        skill_level: userData.skillLevel
+      })
+      .select()
+      .single();
+
+    if (userError) {
+      console.error('❌ User registration error:', userError);
+      throw new Error(`ثبت‌نام ناموفق: ${userError.message}`);
+    }
+
+    console.log('✅ User created:', newUser.id);
+
+    // ایجاد آمار اولیه برای کاربر
+    const { data: newStats, error: statsError } = await supabase
+      .from('user_stats')
+      .insert({
+        user_id: newUser.id,
+        total_points: 0,
+        streak: 0,
+        level: 1,
+        has_active_subscription: false,
+        subscription_expiry_date: null
+      })
+      .select()
+      .single();
+
+    if (statsError) {
+      console.error('❌ Stats creation error:', statsError);
+      // Don't throw, just log
+    }
+
+    const user: User = {
+      id: newUser.id,
+      firstName: newUser.first_name,
+      lastName: newUser.last_name,
+      phone: newUser.phone,
+      instrument: newUser.instrument,
+      skillLevel: newUser.skill_level,
+      registeredAt: newUser.created_at
+    };
+
+    const stats: UserStats = {
+      totalPoints: 0,
+      streak: 0,
+      level: 1,
+      hasActiveSubscription: false,
+      subscriptionExpiryDate: null
+    };
+
+    const session = {
+      user: { id: newUser.id },
+      access_token: 'authenticated'
+    };
+
+    return {
+      user,
+      authUser: user,
+      session,
+      stats,
+      practiceLogs: [],
+      userExists: false
+    };
+  } catch (error: any) {
+    console.error('❌ Registration exception:', error);
+    throw new Error(`خطا در ثبت‌نام: ${error.message}`);
   }
 };
 
+/**
+ * خروج کاربر
+ */
 export const logoutUser = async (): Promise<void> => {
   try {
     await supabase.auth.signOut();
-  } catch (error) {
+  } catch (error: any) {
     console.error('Logout error:', error);
-    throw new Error(`Logout failed: ${error.message}`);
+    throw new Error(`خطا در خروج: ${error.message}`);
   }
 };
 
-// Get current session
+/**
+ * دریافت اطلاعات کاربر
+ */
+export const getUserData = async (userId: string): Promise<{
+  user: User;
+  stats: UserStats;
+  practiceLogs: PracticeLog[];
+}> => {
+  try {
+    const { data: userData, error: userError } = await supabase
+      .from('users')
+      .select('*, user_stats(*)')
+      .eq('id', userId)
+      .single();
+
+    if (userError) {
+      throw userError;
+    }
+
+    const { data: practiceLogsData, error: logsError } = await supabase
+      .from('practice_logs')
+      .select('*')
+      .eq('user_id', userId)
+      .order('date', { ascending: false })
+      .limit(30);
+
+    if (logsError) {
+      console.error('Practice logs error:', logsError);
+    }
+
+    const user: User = {
+      id: userData.id,
+      firstName: userData.first_name,
+      lastName: userData.last_name,
+      phone: userData.phone,
+      instrument: userData.instrument,
+      skillLevel: userData.skill_level,
+      registeredAt: userData.created_at
+    };
+
+    const stats: UserStats = {
+      totalPoints: userData.user_stats?.total_points || 0,
+      streak: userData.user_stats?.streak || 0,
+      level: userData.user_stats?.level || 1,
+      hasActiveSubscription: userData.user_stats?.has_active_subscription || false,
+      subscriptionExpiryDate: userData.user_stats?.subscription_expiry_date || null
+    };
+
+    const practiceLogs: PracticeLog[] = (practiceLogsData || []).map(log => ({
+      id: log.id,
+      date: log.date,
+      minutes: log.minutes,
+      notes: log.notes,
+      points: log.points
+    }));
+
+    return {
+      user,
+      stats,
+      practiceLogs
+    };
+  } catch (error: any) {
+    console.error('Get user data error:', error);
+    throw new Error(`خطا در دریافت اطلاعات: ${error.message}`);
+  }
+};
+
+// =============================================
+// Practice Logs
+// =============================================
+
+/**
+ * ثبت لاگ تمرین
+ */
+export const addPracticeLog = async (
+  userId: string,
+  practiceData: {
+    date: string;
+    minutes: number;
+    notes?: string;
+  }
+): Promise<{ practiceLog: PracticeLog; stats: UserStats }> => {
+  try {
+    const points = Math.floor(practiceData.minutes / 15) * 10; // هر 15 دقیقه = 10 امتیاز
+
+    const { data: newLog, error: logError } = await supabase
+      .from('practice_logs')
+      .insert({
+        user_id: userId,
+        date: practiceData.date,
+        minutes: practiceData.minutes,
+        notes: practiceData.notes,
+        points: points
+      })
+      .select()
+      .single();
+
+    if (logError) {
+      throw logError;
+    }
+
+    // به‌روزرسانی امتیازات کاربر
+    const { data: currentStats } = await supabase
+      .from('user_stats')
+      .select('*')
+      .eq('user_id', userId)
+      .single();
+
+    const newTotalPoints = (currentStats?.total_points || 0) + points;
+    const newLevel = Math.floor(newTotalPoints / 500) + 1; // هر 500 امتیاز = 1 سطح
+
+    // محاسبه استمرار
+    const { data: recentLogs } = await supabase
+      .from('practice_logs')
+      .select('date')
+      .eq('user_id', userId)
+      .order('date', { ascending: false })
+      .limit(30);
+
+    let newStreak = 1;
+    if (recentLogs && recentLogs.length > 1) {
+      const dates = recentLogs.map(log => new Date(log.date));
+      dates.sort((a, b) => b.getTime() - a.getTime());
+      
+      for (let i = 0; i < dates.length - 1; i++) {
+        const diff = Math.floor((dates[i].getTime() - dates[i + 1].getTime()) / (1000 * 60 * 60 * 24));
+        if (diff === 1) {
+          newStreak++;
+        } else {
+          break;
+        }
+      }
+    }
+
+    const { data: updatedStats, error: statsError } = await supabase
+      .from('user_stats')
+      .update({
+        total_points: newTotalPoints,
+        level: newLevel,
+        streak: newStreak
+      })
+      .eq('user_id', userId)
+      .select()
+      .single();
+
+    if (statsError) {
+      console.error('Stats update error:', statsError);
+    }
+
+    const practiceLog: PracticeLog = {
+      id: newLog.id,
+      date: newLog.date,
+      minutes: newLog.minutes,
+      notes: newLog.notes,
+      points: newLog.points
+    };
+
+    const stats: UserStats = {
+      totalPoints: updatedStats?.total_points || newTotalPoints,
+      streak: updatedStats?.streak || newStreak,
+      level: updatedStats?.level || newLevel,
+      hasActiveSubscription: updatedStats?.has_active_subscription || false,
+      subscriptionExpiryDate: updatedStats?.subscription_expiry_date || null
+    };
+
+    return {
+      practiceLog,
+      stats
+    };
+  } catch (error: any) {
+    console.error('Add practice log error:', error);
+    throw new Error(`خطا در ثبت تمرین: ${error.message}`);
+  }
+};
+
+/**
+ * به‌روزرسانی اشتراک
+ */
+export const updateSubscription = async (
+  userId: string,
+  subscriptionData: {
+    hasActiveSubscription: boolean;
+    subscriptionExpiryDate?: string | null;
+  }
+): Promise<{ stats: UserStats }> => {
+  try {
+    const { data: updatedStats, error } = await supabase
+      .from('user_stats')
+      .update({
+        has_active_subscription: subscriptionData.hasActiveSubscription,
+        subscription_expiry_date: subscriptionData.subscriptionExpiryDate
+      })
+      .eq('user_id', userId)
+      .select()
+      .single();
+
+    if (error) {
+      throw error;
+    }
+
+    const stats: UserStats = {
+      totalPoints: updatedStats.total_points,
+      streak: updatedStats.streak,
+      level: updatedStats.level,
+      hasActiveSubscription: updatedStats.has_active_subscription,
+      subscriptionExpiryDate: updatedStats.subscription_expiry_date
+    };
+
+    return { stats };
+  } catch (error: any) {
+    console.error('Update subscription error:', error);
+    throw new Error(`خطا در به‌روزرسانی اشتراک: ${error.message}`);
+  }
+};
+
+// =============================================
+// Helper Functions
+// =============================================
+
+/**
+ * بررسی وجود کاربر
+ */
+export const checkUserExists = async (phone: string): Promise<boolean> => {
+  try {
+    const { data, error } = await supabase
+      .from('users')
+      .select('id')
+      .eq('phone', phone)
+      .single();
+
+    if (error && error.code !== 'PGRST116') {
+      console.error('Check user error:', error);
+      return false;
+    }
+
+    return !!data;
+  } catch (error) {
+    console.error('Check user exception:', error);
+    return false;
+  }
+};
+
+/**
+ * دریافت session فعلی
+ */
 export const getCurrentSession = async () => {
   try {
     const { data: { session }, error } = await supabase.auth.getSession();
@@ -222,118 +580,5 @@ export const getCurrentSession = async () => {
   } catch (error) {
     console.error('Get session error:', error);
     return null;
-  }
-};
-
-// Data functions
-export const getUserData = async (userId: string): Promise<{
-  user: User;
-  stats: UserStats;
-  practiceLogs: PracticeLog[];
-}> => {
-  try {
-    const response = await makeServerRequest(`/user/${userId}`);
-    return response;
-  } catch (error) {
-    console.error('Get user data error:', error);
-    throw new Error(`Failed to get user data: ${error.message}`);
-  }
-};
-
-export const addPracticeLog = async (
-  accessToken: string,
-  practiceData: {
-    date: string;
-    minutes: number;
-    notes?: string;
-  }
-): Promise<{ practiceLog: PracticeLog; stats: UserStats }> => {
-  try {
-    const response = await makeServerRequest('/practice-log', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-      },
-      body: JSON.stringify(practiceData),
-    });
-    
-    return response;
-  } catch (error) {
-    console.error('Add practice log error:', error);
-    throw new Error(`Failed to add practice log: ${error.message}`);
-  }
-};
-
-export const updateSubscription = async (
-  accessToken: string,
-  subscriptionData: {
-    hasActiveSubscription: boolean;
-    subscriptionExpiryDate?: string | null;
-  }
-): Promise<{ stats: UserStats }> => {
-  try {
-    const response = await makeServerRequest('/subscription', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-      },
-      body: JSON.stringify(subscriptionData),
-    });
-    
-    return response;
-  } catch (error) {
-    console.error('Update subscription error:', error);
-    throw new Error(`Failed to update subscription: ${error.message}`);
-  }
-};
-
-// Migration helper: migrate data from localStorage to Supabase
-export const migrateLocalStorageData = async (accessToken: string) => {
-  try {
-    // Get localStorage data
-    const savedPracticeLogs = localStorage.getItem('doosell_practice_logs');
-    const practiceLogs: PracticeLog[] = savedPracticeLogs ? JSON.parse(savedPracticeLogs) : [];
-    
-    const hasActiveSubscription = localStorage.getItem('doosell_subscription') === 'active';
-    const subscriptionExpiryDate = hasActiveSubscription 
-      ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
-      : null;
-
-    // Migrate practice logs
-    for (const log of practiceLogs) {
-      try {
-        await addPracticeLog(accessToken, {
-          date: log.date,
-          minutes: log.minutes,
-          notes: log.notes
-        });
-      } catch (error) {
-        console.error('Failed to migrate practice log:', log, error);
-      }
-    }
-
-    // Migrate subscription status
-    if (hasActiveSubscription) {
-      try {
-        await updateSubscription(accessToken, {
-          hasActiveSubscription,
-          subscriptionExpiryDate
-        });
-      } catch (error) {
-        console.error('Failed to migrate subscription:', error);
-      }
-    }
-
-    // Clear localStorage after successful migration
-    localStorage.removeItem('doosell_practice_logs');
-    localStorage.removeItem('doosell_subscription');
-    localStorage.removeItem('doosell_points');
-    localStorage.removeItem('doosell_streak');
-    localStorage.removeItem('doosell_level');
-    
-    console.log('Data migration completed successfully');
-  } catch (error) {
-    console.error('Data migration failed:', error);
-    throw error;
   }
 };
