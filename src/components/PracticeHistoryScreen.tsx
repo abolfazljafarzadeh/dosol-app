@@ -1,12 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { useApp } from '../App';
 import { ArrowRight, ArrowLeft, Clock, Calendar, TrendingUp, Sun } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
-import jalaali from 'jalaali-js';
 
 // Persian solar calendar utilities
 const persianMonths = [
@@ -17,121 +15,64 @@ const persianMonths = [
 const persianWeekDays = ['ش', 'ی', 'د', 'س', 'چ', 'پ', 'ج'];
 const persianWeekDaysFull = ['شنبه', 'یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنج‌شنبه', 'جمعه'];
 
-// Get current date in Iran timezone
-const getTehranDate = () => {
-  const now = new Date();
-  const formatter = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Tehran',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour12: false
-  });
-  
-  const parts = formatter.formatToParts(now);
-  const year = parseInt(parts.find(p => p.type === 'year')?.value || '0');
-  const month = parseInt(parts.find(p => p.type === 'month')?.value || '0');
-  const day = parseInt(parts.find(p => p.type === 'day')?.value || '0');
-  
-  // Return a date object with correct Tehran date
-  return new Date(year, month - 1, day);
-};
-
-// Format date to YYYY-MM-DD without timezone conversion
-const formatDateLocal = (date: Date): string => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
-
 // Convert Gregorian to Persian date
 const gregorianToPersian = (date: Date) => {
-  const jDate = jalaali.toJalaali(date.getFullYear(), date.getMonth() + 1, date.getDate());
+  const year = date.getFullYear();
+  const month = date.getMonth() + 1;
+  const day = date.getDate();
+  
+  // Simple approximation for Persian calendar conversion
+  // In a real app, you'd use a proper library like moment-jalaali
+  let persianYear = year - 621;
+  let persianMonth = month + 3;
+  let persianDay = day;
+  
+  if (persianMonth > 12) {
+    persianMonth -= 12;
+    persianYear += 1;
+  }
+  
+  // Adjust for Persian calendar specifics
+  if (month >= 3 && month <= 5) { // Spring
+    persianMonth = month - 2;
+  } else if (month >= 6 && month <= 8) { // Summer
+    persianMonth = month - 2;
+  } else if (month >= 9 && month <= 11) { // Autumn
+    persianMonth = month - 2;
+  } else { // Winter
+    persianMonth = month + 10;
+    if (persianMonth > 12) {
+      persianMonth -= 12;
+      persianYear += 1;
+    }
+  }
+  
   return {
-    year: jDate.jy,
-    month: jDate.jm,
-    day: jDate.jd
+    year: persianYear,
+    month: persianMonth,
+    day: persianDay
   };
 };
 
-// Convert Persian to Gregorian date
-const persianToGregorian = (jy: number, jm: number, jd: number) => {
-  const gDate = jalaali.toGregorian(jy, jm, jd);
-  return new Date(gDate.gy, gDate.gm - 1, gDate.gd);
-};
-
-interface PracticeLog {
-  id: string;
-  minutes: number;
-  local_date: string;
-  created_at: string;
-  note?: string;
-}
-
 const PracticeHistoryScreen = () => {
   const { state, navigate } = useApp();
-  // Store Persian date instead of Gregorian
-  const today = getTehranDate();
-  const todayPersian = gregorianToPersian(today);
-  const [currentPersianDate, setCurrentPersianDate] = useState({ 
-    year: todayPersian.year, 
-    month: todayPersian.month 
-  });
+  const [currentDate, setCurrentDate] = useState(new Date());
   const [activeTab, setActiveTab] = useState('monthly');
   const [currentWeekOffset, setCurrentWeekOffset] = useState(0);
-  const [practiceLogs, setPracticeLogs] = useState<PracticeLog[]>([]);
-  const [loading, setLoading] = useState(true);
 
-  // Fetch practice logs from database
-  useEffect(() => {
-    const fetchPracticeLogs = async () => {
-      try {
-        setLoading(true);
-        const { data: { user } } = await supabase.auth.getUser();
-        
-        if (!user) {
-          console.error('No user found');
-          return;
-        }
-
-        const { data, error } = await supabase
-          .from('practice_logs')
-          .select('id, minutes, local_date, created_at, note')
-          .eq('user_id', user.id)
-          .order('local_date', { ascending: false });
-
-        if (error) {
-          console.error('Error fetching practice logs:', error);
-          return;
-        }
-
-        setPracticeLogs(data || []);
-      } catch (err) {
-        console.error('Exception fetching practice logs:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchPracticeLogs();
-  }, []);
-
-  // Get today's weekday
+  // Get today's Persian date
+  const today = new Date();
+  const todayPersian = gregorianToPersian(today);
   const todayWeekDay = persianWeekDaysFull[today.getDay() === 0 ? 6 : today.getDay() - 1];
 
-  // Generate calendar days for current Persian month
+  // Generate calendar days for current month
   const generateCalendarDays = () => {
-    const { year, month } = currentPersianDate;
-    
-    // Get number of days in Persian month (first 6 months have 31 days, next 5 have 30, last has 29/30)
-    const daysInMonth = month <= 6 ? 31 : (month <= 11 ? 30 : (jalaali.isLeapJalaaliYear(year) ? 30 : 29));
-    
-    // Get the first day of the Persian month as Gregorian
-    const firstDayGregorian = persianToGregorian(year, month, 1);
-    // Convert to Persian week day (Saturday = 0, Sunday = 1, ..., Friday = 6)
-    const gregorianDay = firstDayGregorian.getDay(); // 0=Sunday, 6=Saturday
-    const startingDayOfWeek = (gregorianDay + 1) % 7; // Convert to Persian week (Saturday = 0)
+    const year = currentDate.getFullYear();
+    const month = currentDate.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    const daysInMonth = lastDay.getDate();
+    const startingDayOfWeek = firstDay.getDay();
     
     const days = [];
     
@@ -140,14 +81,10 @@ const PracticeHistoryScreen = () => {
       days.push(null);
     }
     
-    const todayDateString = formatDateLocal(today);
-    
-    // Add days of the Persian month
+    // Add days of the month
     for (let day = 1; day <= daysInMonth; day++) {
-      // Convert Persian date to Gregorian to match with practice_logs
-      const gregorianDate = persianToGregorian(year, month, day);
-      const dateString = formatDateLocal(gregorianDate);
-      const dayLogs = practiceLogs.filter(log => log.local_date === dateString);
+      const dateString = new Date(year, month, day).toISOString().split('T')[0];
+      const dayLogs = state.practicesLogs.filter(log => log.date === dateString);
       const totalMinutes = dayLogs.reduce((sum, log) => sum + log.minutes, 0);
       
       days.push({
@@ -162,35 +99,26 @@ const PracticeHistoryScreen = () => {
     return days;
   };
 
-  // Generate week days for current week (with Persian dates)
+  // Generate week days for current week
   const generateWeekDays = () => {
     const startOfWeek = new Date(today);
-    // Calculate days since Saturday (Saturday = 0, Sunday = 1, ..., Friday = 6)
-    const gregorianDay = today.getDay(); // 0=Sunday, 6=Saturday
-    const daysSinceSaturday = (gregorianDay + 1) % 7;
-    startOfWeek.setDate(today.getDate() - daysSinceSaturday + (currentWeekOffset * 7));
-    
-    const todayDateString = formatDateLocal(today);
+    startOfWeek.setDate(today.getDate() - today.getDay() + 6 + (currentWeekOffset * 7)); // Saturday start
     
     const weekDays = [];
     for (let i = 0; i < 7; i++) {
       const date = new Date(startOfWeek);
       date.setDate(startOfWeek.getDate() + i);
-      const dateString = formatDateLocal(date);
-      const dayLogs = practiceLogs.filter(log => log.local_date === dateString);
+      const dateString = date.toISOString().split('T')[0];
+      const dayLogs = state.practicesLogs.filter(log => log.date === dateString);
       const totalMinutes = dayLogs.reduce((sum, log) => sum + log.minutes, 0);
-      
-      // Convert to Persian date for display
-      const persianDate = gregorianToPersian(date);
       
       weekDays.push({
         date,
-        persianDate,
         dateString,
         totalMinutes,
         hasLog: dayLogs.length > 0,
         logCount: dayLogs.length,
-        isToday: dateString === todayDateString
+        isToday: dateString === today.toISOString().split('T')[0]
       });
     }
     
@@ -202,23 +130,11 @@ const PracticeHistoryScreen = () => {
 
   // Navigation functions
   const goToPreviousMonth = () => {
-    let { year, month } = currentPersianDate;
-    month--;
-    if (month < 1) {
-      month = 12;
-      year--;
-    }
-    setCurrentPersianDate({ year, month });
+    setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1));
   };
 
   const goToNextMonth = () => {
-    let { year, month } = currentPersianDate;
-    month++;
-    if (month > 12) {
-      month = 1;
-      year++;
-    }
-    setCurrentPersianDate({ year, month });
+    setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1));
   };
 
   const goToPreviousWeek = () => {
@@ -266,24 +182,17 @@ const PracticeHistoryScreen = () => {
     return `${absOffset} هفته قبل`;
   };
 
-  // Statistics for current Persian month
+  // Statistics for current month
   const monthStats = React.useMemo(() => {
-    const { year, month } = currentPersianDate;
-    const daysInMonth = month <= 6 ? 31 : (month <= 11 ? 30 : (jalaali.isLeapJalaaliYear(year) ? 30 : 29));
+    const monthStart = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).toISOString().split('T')[0];
+    const monthEnd = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).toISOString().split('T')[0];
     
-    // Get first and last day of Persian month as Gregorian dates
-    const monthStartGregorian = persianToGregorian(year, month, 1);
-    const monthEndGregorian = persianToGregorian(year, month, daysInMonth);
-    
-    const monthStart = formatDateLocal(monthStartGregorian);
-    const monthEnd = formatDateLocal(monthEndGregorian);
-    
-    const monthLogs = practiceLogs.filter(log => 
-      log.local_date >= monthStart && log.local_date <= monthEnd
+    const monthLogs = state.practicesLogs.filter(log => 
+      log.date >= monthStart && log.date <= monthEnd
     );
     
     const totalMinutes = monthLogs.reduce((sum, log) => sum + log.minutes, 0);
-    const totalDays = new Set(monthLogs.map(log => log.local_date)).size;
+    const totalDays = new Set(monthLogs.map(log => log.date)).size;
     const totalSessions = monthLogs.length;
     
     return {
@@ -292,7 +201,7 @@ const PracticeHistoryScreen = () => {
       totalSessions,
       averagePerDay: totalDays > 0 ? Math.round(totalMinutes / totalDays) : 0
     };
-  }, [currentPersianDate, practiceLogs]);
+  }, [currentDate, state.practicesLogs]);
 
   // Statistics for current week
   const weekStats = React.useMemo(() => {
@@ -301,12 +210,12 @@ const PracticeHistoryScreen = () => {
     
     if (!weekStart || !weekEnd) return { totalMinutes: 0, totalDays: 0, totalSessions: 0, averagePerDay: 0 };
     
-    const weekLogs = practiceLogs.filter(log => 
-      log.local_date >= weekStart && log.local_date <= weekEnd
+    const weekLogs = state.practicesLogs.filter(log => 
+      log.date >= weekStart && log.date <= weekEnd
     );
     
     const totalMinutes = weekLogs.reduce((sum, log) => sum + log.minutes, 0);
-    const totalDays = new Set(weekLogs.map(log => log.local_date)).size;
+    const totalDays = new Set(weekLogs.map(log => log.date)).size;
     const totalSessions = weekLogs.length;
     
     return {
@@ -315,7 +224,7 @@ const PracticeHistoryScreen = () => {
       totalSessions,
       averagePerDay: totalDays > 0 ? Math.round(totalMinutes / totalDays) : 0
     };
-  }, [weekDays, practiceLogs]);
+  }, [weekDays, state.practicesLogs]);
 
   const getDotStyle = (day: any) => {
     if (!day || !day.hasLog) return 'bg-gray-200';
@@ -325,6 +234,9 @@ const PracticeHistoryScreen = () => {
     if (day.totalMinutes >= 15) return 'bg-green-300'; // Light green for 15+ minutes
     return 'bg-green-200'; // Very light green for < 15 minutes
   };
+
+  // Get current Persian month and year
+  const currentPersian = gregorianToPersian(currentDate);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 via-amber-50 to-yellow-50">
@@ -417,7 +329,7 @@ const PracticeHistoryScreen = () => {
                       </div>
                       <div className={`rounded-xl p-2 ${day.isToday ? 'bg-orange-100 border-2 border-orange-300' : 'bg-gray-50'}`}>
                         <div className="text-sm mb-2">
-                          {new Intl.NumberFormat('fa-IR').format(day.persianDate.day)}
+                          {new Intl.NumberFormat('fa-IR').format(day.date.getDate())}
                         </div>
                         <div className="flex flex-col items-center gap-1">
                           <div className={`w-4 h-4 rounded-full ${getDotStyle(day)}`}></div>
@@ -493,7 +405,7 @@ const PracticeHistoryScreen = () => {
                     <ArrowLeft className="w-4 h-4" />
                   </Button>
                   <h2 className="text-lg">
-                    {persianMonths[currentPersianDate.month - 1]} {new Intl.NumberFormat('fa-IR').format(currentPersianDate.year)}
+                    {persianMonths[currentPersian.month - 1]} {new Intl.NumberFormat('fa-IR').format(currentPersian.year)}
                   </h2>
                   <Button
                     variant="ghost"

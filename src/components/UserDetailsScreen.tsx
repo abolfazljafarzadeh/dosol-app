@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { ChevronRight } from 'lucide-react';
 import { useApp } from '../App';
 import { registerUser } from '../utils/api';
-import { toast } from 'sonner';
+import { toast } from 'sonner@2.0.3';
 
 const UserDetailsScreen = () => {
   const { state, setState, navigate } = useApp();
@@ -73,10 +73,10 @@ const UserDetailsScreen = () => {
     setIsLoading(true);
 
     try {
-      // ثبت‌نام کاربر جدید - session به صورت خودکار توسط supabase مدیریت می‌شود
+      // ثبت‌نام کاربر جدید
       const registerResponse = await registerUser({
         ...formData,
-        phone: state.tempPhone,
+        phone: state.tempPhone, // استفاده از شماره تلفن ذخیره شده
       });
 
       // ذخیره در localStorage برای demo mode

@@ -5,7 +5,6 @@ import { Textarea } from './ui/textarea';
 import { ScrollArea } from './ui/scroll-area';
 import { useApp } from '../App';
 import { Brain, MessageCircle, Send, Lock, ShoppingBag } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
 
 interface Message {
   id: string;
@@ -32,41 +31,20 @@ const AssistantScreen = () => {
     };
 
     setMessages(prev => [...prev, userMessage]);
-    const currentQuestion = question.trim();
     setQuestion('');
     setIsLoading(true);
 
-    try {
-      const { data, error } = await supabase.functions.invoke('ask-metis-question', {
-        body: { question: currentQuestion }
-      });
-
-      if (error) {
-        throw error;
-      }
-
+    // Simulate API call delay
+    setTimeout(() => {
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         type: 'assistant',
-        content: data.answer,
+        content: `سوال شما: "${userMessage.content}"\n\nمتأسفانه این یک نسخه آزمایشی است و به سرور متصل نیست. در نسخه واقعی، دستیار هوشمند پاسخ‌های تخصصی و کاربردی در زمینه موسیقی ارائه خواهد داد.`,
         timestamp: new Date(),
       };
-      
       setMessages(prev => [...prev, assistantMessage]);
-    } catch (error) {
-      console.error('Error calling Metis API:', error);
-      
-      const errorMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        type: 'assistant',
-        content: 'متأسفانه در حال حاضر نمی‌توانم پاسخ دهم. لطفاً دوباره تلاش کنید.',
-        timestamp: new Date(),
-      };
-      
-      setMessages(prev => [...prev, errorMessage]);
-    } finally {
       setIsLoading(false);
-    }
+    }, 1000);
   };
 
   return (

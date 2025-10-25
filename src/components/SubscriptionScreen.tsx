@@ -5,8 +5,7 @@ import { Badge } from './ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog';
 import { useApp } from '../App';
 import { ArrowRight, Check, Crown, Users, Target, TrendingUp, Brain, Flame, BarChart } from 'lucide-react';
-import { toast } from 'sonner';
-import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner@2.0.3';
 
 interface SubscriptionPlan {
   id: string;
@@ -31,14 +30,10 @@ const SubscriptionScreen = () => {
   const [selectedPlan, setSelectedPlan] = useState<SubscriptionPlan | null>(null);
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [timeRemaining, setTimeRemaining] = useState<TimeRemaining>({ days: 0, hours: 0, minutes: 0, seconds: 0 });
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [retryAfter, setRetryAfter] = useState<number | null>(null);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Set discount end time (2 days from now as example)
   const discountEndTime = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
 
-  // Countdown timer effect
   useEffect(() => {
     const calculateTimeRemaining = () => {
       const now = new Date().getTime();
@@ -56,23 +51,15 @@ const SubscriptionScreen = () => {
       }
     };
 
+    // Calculate initial time
     calculateTimeRemaining();
+
+    // Update every second
     const timer = setInterval(calculateTimeRemaining, 1000);
+
+    // Cleanup on unmount
     return () => clearInterval(timer);
   }, []);
-
-  // Countdown for retry after rate limit
-  useEffect(() => {
-    if (retryAfter && retryAfter > 0) {
-      const timer = setInterval(() => {
-        setRetryAfter(prev => {
-          if (prev && prev > 1) return prev - 1;
-          return null;
-        });
-      }, 1000);
-      return () => clearInterval(timer);
-    }
-  }, [retryAfter]);
 
   const formatTime = (num: number) => {
     return new Intl.NumberFormat('fa-IR').format(num).padStart(2, '۰');
@@ -175,79 +162,17 @@ const SubscriptionScreen = () => {
     setShowConfirmation(true);
   };
 
-  const handleSubscribe = async () => {
-    if (!selectedPlan || isProcessing || retryAfter) return;
-
-    try {
-      setIsProcessing(true);
-      setErrorMessage(null);
-      setShowConfirmation(false);
-      toast.loading('در حال فعال‌سازی اشتراک...');
-
-      const { data: session } = await supabase.auth.getSession();
-      if (!session?.session?.user) {
-        toast.dismiss();
-        toast.error('لطفاً ابتدا وارد حساب کاربری خود شوید');
-        setIsProcessing(false);
-        return;
-      }
-
-      // TEST MODE: Activate premium directly without payment gateway
-      const { data, error } = await supabase.functions.invoke('activate-premium-test', {
-        body: {
-          plan_id: selectedPlan.id,
-          validity_days: selectedPlan.validityDays,
-        }
-      });
-
-      toast.dismiss();
-
-      if (error) {
-        console.error('❌ Premium activation error:', error);
-        setErrorMessage('خطا در فعال‌سازی اشتراک');
-        toast.error('خطا در فعال‌سازی اشتراک');
-        setIsProcessing(false);
-        return;
-      }
-
-      if (data?.ok && data?.is_premium) {
-        // Update local state with subscription info
-        setState(prev => ({
-          ...prev,
-          user: prev.user ? { ...prev.user, is_premium: true } : prev.user,
-          hasActiveSubscription: true,
-          subscriptionExpiryDate: data.subscription_expires_at || null
-        }));
-
-        // Update localStorage
-        if (state.user) {
-          const updatedStats = {
-            totalPoints: state.totalPoints,
-            streak: state.streak,
-            level: state.level,
-            hasActiveSubscription: true,
-            subscriptionExpiryDate: data.subscription_expires_at || null,
-          };
-          localStorage.setItem('doosell_demo_stats', JSON.stringify(updatedStats));
-        }
-
-        toast.success('🎉 اشتراک شما با موفقیت فعال شد!');
-        
-        // Redirect to dashboard after short delay
-        setTimeout(() => {
-          navigate('dashboard');
-        }, 1500);
-      } else {
-        toast.error('خطا در فعال‌سازی اشتراک');
-        setIsProcessing(false);
-      }
+  const handleSubscribe = () => {
+    if (selectedPlan) {
+      // Mock subscription activation
+      localStorage.setItem('doosell_subscription', 'active');
+      setState(prev => ({ ...prev, hasActiveSubscription: true }));
       
-    } catch (error) {
-      console.error('❌ Subscribe error:', error);
-      toast.dismiss();
-      setErrorMessage('مشکلی در فرآیند فعال‌سازی رخ داده است');
-      toast.error('خطایی رخ داد. لطفاً دوباره تلاش کنید');
-      setIsProcessing(false);
+      setShowConfirmation(false);
+      setSelectedPlan(null);
+      
+      toast.success('اشتراک شما با موفقیت فعال شد! 🎉');
+      navigate('dashboard');
     }
   };
 
@@ -376,14 +301,13 @@ const SubscriptionScreen = () => {
                     </div>
                     <Button
                       onClick={() => handlePlanSelect(plan)}
-                      disabled={isProcessing || !!retryAfter}
                       className={`${
                         plan.isPopular 
                           ? 'bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600' 
                           : 'bg-gradient-to-r from-orange-400 to-amber-400 hover:from-orange-500 hover:to-amber-500'
-                      } text-white rounded-xl px-6 disabled:opacity-50 disabled:cursor-not-allowed`}
+                      } text-white rounded-xl px-6`}
                     >
-                      {isProcessing ? 'در حال پردازش...' : retryAfter ? `صبر (${retryAfter}s)` : 'انتخاب پلن'}
+                      انتخاب پلن
                     </Button>
                   </div>
 
@@ -463,30 +387,19 @@ const SubscriptionScreen = () => {
                 </p>
               </div>
 
-              {errorMessage && retryAfter && (
-                <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 text-center">
-                  <p className="text-orange-800 text-sm mb-2">{errorMessage}</p>
-                  <p className="text-orange-600 text-lg font-bold">
-                    {Math.floor(retryAfter / 60)}:{String(retryAfter % 60).padStart(2, '0')}
-                  </p>
-                </div>
-              )}
-
               <div className="flex gap-3">
                 <Button
                   variant="outline"
                   onClick={() => setShowConfirmation(false)}
                   className="flex-1"
-                  disabled={isProcessing}
                 >
                   انصراف
                 </Button>
                 <Button
                   onClick={handleSubscribe}
-                  disabled={isProcessing || !!retryAfter}
-                  className="flex-1 bg-gradient-to-r from-orange-400 to-amber-400 hover:from-orange-500 hover:to-amber-500 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex-1 bg-gradient-to-r from-orange-400 to-amber-400 hover:from-orange-500 hover:to-amber-500 text-white"
                 >
-                  {isProcessing ? 'در حال پردازش...' : retryAfter ? `صبر (${retryAfter}s)` : 'تأیید خرید'}
+                  تأیید خرید
                 </Button>
               </div>
             </div>

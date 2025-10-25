@@ -3,9 +3,9 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { useApp } from '../App';
-import { supabase } from '@/integrations/supabase/client';
-import { toast } from 'sonner';
-import doosellLogo from '@/assets/doosell-logo.svg';
+import { sendOTP } from '../utils/api';
+import { toast } from 'sonner@2.0.3';
+import doosellLogo from 'figma:asset/b58b06cddb1628092c6db84c1360a4a9e7aca31b.png';
 
 const PhoneInputScreen = () => {
   const { state, setState, navigate } = useApp();
@@ -42,33 +42,28 @@ const PhoneInputScreen = () => {
     setIsLoading(true);
 
     try {
-      console.log('🔄 Requesting OTP via n8n...');
+      console.log('🔄 Calling sendOTP...');
+      // ارسال کد تأیید
+      const response = await sendOTP(phone);
+      console.log('📞 sendOTP response:', response);
       
-      // فراخوانی Edge Function send-otp
-      const { data, error } = await supabase.functions.invoke('send-otp', {
-        body: { phone },
-      });
-      
-      if (error || data?.status !== 'otp_sent') {
-        console.error('❌ OTP request failed:', error);
-        setError('خطا در ارسال کد تأیید');
-        toast.error('خطا در ارسال کد تأیید');
-        return;
+      if (response.success) {
+        // ذخیره شماره تلفن و انتقال به صفحه تأیید OTP
+        setState(prev => ({
+          ...prev,
+          tempPhone: phone,
+        }));
+        
+        console.log('✅ Navigating to OTP verification');
+        toast.success('کد تأیید به شماره شما ارسال شد');
+        navigate('otp-verification');
+      } else {
+        console.log('❌ Send OTP failed:', response.message);
+        setError(response.message || 'خطا در ارسال کد تأیید');
       }
-
-      // ذخیره شماره تلفن و انتقال به صفحه تأیید OTP
-      setState(prev => ({
-        ...prev,
-        tempPhone: phone,
-      }));
-      
-      console.log('✅ OTP sent successfully, navigating to verification');
-      toast.success('کد تأیید به شماره شما ارسال شد');
-      navigate('otp-verification');
     } catch (error) {
       console.error('Send OTP error:', error);
       setError('خطا در ارسال کد تأیید. لطفاً دوباره تلاش کنید');
-      toast.error('خطا در ارسال کد');
     } finally {
       setIsLoading(false);
     }
@@ -116,6 +111,17 @@ const PhoneInputScreen = () => {
           >
             {isLoading ? 'در حال بررسی...' : 'ادامه'}
           </Button>
+          
+          <button 
+            type="button"
+            onClick={() => {
+              setPhone('09123456789');
+              setError('');
+            }}
+            className="w-full mt-3 bg-gray-200 text-gray-700 py-2 rounded-lg text-sm hover:bg-gray-300"
+          >
+            شماره تست
+          </button>
         </form>
 
         <div className="mt-8 text-center">

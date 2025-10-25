@@ -1,75 +1,63 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Progress } from './ui/progress';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { useApp } from '../App';
-import { Calendar, Star, Lock, Trophy, Crown, ShoppingBag, Loader2, AlertCircle, CheckCircle } from 'lucide-react';
+import { Calendar, Star, Lock, Trophy, Crown, ShoppingBag } from 'lucide-react';
 import { formatPersianNumber, toPersianDigits } from './utils/persianUtils';
-import { getChallengesView, claimChallengeReward } from '../services/challengeService';
-import type { GetChallengesViewResponse } from '../types/backend';
-import { toast } from 'sonner';
-import { Alert, AlertDescription } from './ui/alert';
 
 const ChallengesScreen = () => {
   const { state, navigate } = useApp();
-  
-  const [challengesData, setChallengesData] = useState<GetChallengesViewResponse | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [claimingId, setClaimingId] = useState<string | null>(null);
 
-  const fetchChallenges = async () => {
-    try {
-      setIsLoading(true);
-      setError(null);
-      const data = await getChallengesView();
-      
-      if (!data.ok) {
-        throw new Error(data.error || 'خطا در دریافت چالش‌ها');
-      }
-      
-      setChallengesData(data);
-    } catch (err: any) {
-      console.error('Error fetching challenges:', err);
-      
-      if (err.message?.includes('AUTH_REQUIRED') || err.message?.includes('Unauthorized')) {
-        navigate('phone');
-        return;
-      }
-      
-      setError(err.message || 'خطا در دریافت اطلاعات چالش‌ها');
-    } finally {
-      setIsLoading(false);
-    }
+  // Mock weekly challenge data
+  const weeklyChallenge = {
+    title: 'در ۷ روز، ۵ روز تمرین کن',
+    description: 'در این هفته ۵ روز تمرین کنید و مدال هفتگی دریافت کنید',
+    progress: 3,
+    target: 5,
+    reward: {
+      points: 50,
+      medal: 'مدال چالش هفتگی'
+    },
+    weekDays: [
+      { day: 'شنبه', status: 'done' },
+      { day: 'یکشنبه', status: 'done' },
+      { day: 'دوشنبه', status: 'done' },
+      { day: 'سه‌شنبه', status: 'left' },
+      { day: 'چهارشنبه', status: 'left' },
+      { day: 'پنج‌شنبه', status: 'left' },
+      { day: 'جمعه', status: 'left' },
+    ],
+    isCompleted: false
   };
 
-  const handleClaimReward = async (instanceId: string) => {
-    try {
-      setClaimingId(instanceId);
-      const result = await claimChallengeReward(instanceId);
-      
-      if (!result.ok) {
-        throw new Error(result.error || 'خطا در دریافت پاداش');
-      }
-      
-      toast.success(`🎉 پاداش دریافت شد! ${toPersianDigits(result.xpAwarded?.toString() || '0')} امتیاز به شما اضافه شد${result.badgeGranted ? ' و مدال جدید کسب کردید!' : '!'}`);
-      
-      // Refresh challenges data
-      await fetchChallenges();
-    } catch (err: any) {
-      console.error('Error claiming reward:', err);
-      toast.error(`❌ ${err.message || 'خطا در دریافت پاداش'}`);
-    } finally {
-      setClaimingId(null);
+  const upcomingChallenges = [
+    {
+      id: 1,
+      title: 'استمرار ۱۰ روزه',
+      description: '۱۰ روز متوالی تمرین کنید',
+      reward: { points: 100, medal: 'مدال استمرار' },
+      prerequisite: 'تکمیل چالش ۵ از ۷',
+      isLocked: false
+    },
+    {
+      id: 2,
+      title: 'قهرمان ماه',
+      description: 'در یک ماه ۲۰ روز تمرین کنید',
+      reward: { points: 200, medal: 'مدال قهرمان ماه' },
+      prerequisite: 'تکمیل چالش استمرار ۱۰ روزه',
+      isLocked: true
+    },
+    {
+      id: 3,
+      title: 'پیشرفت سریع',
+      description: 'در یک هفته ۱۰ ساعت تمرین کنید',
+      reward: { points: 150, medal: 'مدال پیشرفت سریع' },
+      prerequisite: 'تکمیل چالش ۵ از ۷',
+      isLocked: false
     }
-  };
-
-  useEffect(() => {
-    if (state.hasActiveSubscription) {
-      fetchChallenges();
-    }
-  }, [state.hasActiveSubscription]);
+  ];
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -97,43 +85,13 @@ const ChallengesScreen = () => {
     }
   };
 
-  // Helper to convert "YYYY-MM-DD" string dates to Persian weekday names
-  const getWeekDaysFromMarked = (daysMarked: string[], weekStart: string, weekEnd: string) => {
-    const persianDays = ['شنبه', 'یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنج‌شنبه', 'جمعه'];
-    const result = [];
-    
-    // Parse the weekStart date correctly to avoid timezone issues
-    const [year, month, day] = weekStart.split('-').map(Number);
-    
-    // Debug logging
-    console.log('🗓️ Week start:', weekStart);
-    console.log('📅 Days marked:', daysMarked);
-    
-    for (let i = 0; i < 7; i++) {
-      // Create date string in YYYY-MM-DD format without timezone conversion
-      const currentDate = new Date(year, month - 1, day + i);
-      const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(currentDate.getDate()).padStart(2, '0')}`;
-      
-      // markedDates might be a JSON array, so check if it's actually an array
-      const markedArray = Array.isArray(daysMarked) ? daysMarked : [];
-      const isDone = markedArray.includes(dateStr);
-      
-      console.log(`Day ${i} (${persianDays[i]}): ${dateStr} - ${isDone ? 'DONE' : 'not done'}`);
-      
-      result.push({
-        day: persianDays[i],
-        status: isDone ? 'done' : 'left'
-      });
-    }
-    
-    console.log('✅ Final result:', result);
-    return result;
-  };
-
-  const activeChallenge = challengesData?.active?.find(ch => ch.kind === 'periodic' && ch.type === 'days_in_period');
-  const rollingChallenges = challengesData?.active?.filter(ch => ch.kind === 'rolling') || [];
-  const claimableChallenges = challengesData?.claimable || [];
-  const upcomingChallenges = challengesData?.upcoming || [];
+  // Check if user has practiced this week
+  const hasPracticedThisWeek = state.practicesLogs.some(log => {
+    const logDate = new Date(log.date);
+    const today = new Date();
+    const weekStart = new Date(today.setDate(today.getDate() - today.getDay() + 6)); // Saturday
+    return logDate >= weekStart;
+  });
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 via-amber-50 to-yellow-50 pb-20">
@@ -149,231 +107,127 @@ const ChallengesScreen = () => {
       {/* Content with conditional blur */}
       <div className="relative">
         <div className={`p-6 space-y-6 ${!state.hasActiveSubscription ? 'blur-sm pointer-events-none' : ''}`}>
-          
-          {/* Loading State */}
-          {isLoading && (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
-            </div>
+          {!hasPracticedThisWeek && (
+            <Card className="rounded-2xl shadow-sm bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200">
+              <CardContent className="p-4">
+                <div className="text-center">
+                  <h4 className="text-blue-800 mb-2">شروع چالش</h4>
+                  <p className="text-blue-700 text-sm">
+                    با اولین تمرین این هفته، وارد چالش می‌شی!
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
           )}
 
-          {/* Error State */}
-          {error && !isLoading && (
-            <Alert className="bg-red-50 border-red-200">
-              <AlertCircle className="h-4 w-4 text-red-600" />
-              <AlertDescription className="text-red-800">
-                {error}
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={fetchChallenges}
-                  className="mt-2 w-full"
-                >
-                  تلاش مجدد
-                </Button>
-              </AlertDescription>
-            </Alert>
-          )}
+          {/* Active Challenge */}
+          <Card className="rounded-2xl shadow-lg border-2 border-orange-200">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Trophy className="w-5 h-5 text-orange-500" />
+                  چالش فعال
+                </CardTitle>
+                <Badge className="bg-orange-100 text-orange-700">این هفته</Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <h3 className="text-base mb-2">{weeklyChallenge.title}</h3>
+                <p className="text-sm text-gray-600 mb-3">{weeklyChallenge.description}</p>
+                
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm text-gray-600">پیشرفت</span>
+                  <span className="text-sm text-gray-900">
+                    {toPersianDigits(weeklyChallenge.progress.toString())} از {toPersianDigits(weeklyChallenge.target.toString())} انجام شده
+                  </span>
+                </div>
+                <Progress 
+                  value={(weeklyChallenge.progress / weeklyChallenge.target) * 100} 
+                  className="h-2 mb-4"
+                />
+              </div>
 
-          {/* Content */}
-          {!isLoading && !error && challengesData && (
-            <>
-              {/* No Active Challenge Notice */}
-              {!activeChallenge && (
-                <Card className="rounded-2xl shadow-sm bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200">
-                  <CardContent className="p-4">
-                    <div className="text-center">
-                      <h4 className="text-blue-800 mb-2">شروع چالش</h4>
-                      <p className="text-blue-700 text-sm">
-                        با اولین تمرین این هفته، وارد چالش می‌شی!
-                      </p>
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* Active Challenge */}
-              {activeChallenge && (
-                <Card className="rounded-2xl shadow-lg border-2 border-orange-200">
-                  <CardHeader>
-                    <div className="flex items-center justify-between">
-                      <CardTitle className="text-lg flex items-center gap-2">
-                        <Trophy className="w-5 h-5 text-orange-500" />
-                        چالش فعال
-                      </CardTitle>
-                      <Badge className="bg-orange-100 text-orange-700">این هفته</Badge>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div>
-                      <h3 className="text-base mb-2">{activeChallenge.title}</h3>
-                      <p className="text-sm text-gray-600 mb-3">
-                        {activeChallenge.targetDays && `در این هفته ${toPersianDigits(activeChallenge.targetDays.toString())} روز تمرین کنید`}
-                      </p>
-                      
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm text-gray-600">پیشرفت</span>
-                        <span className="text-sm text-gray-900">
-                          {toPersianDigits(activeChallenge.daysDone?.toString() || '0')} از {toPersianDigits(activeChallenge.targetDays?.toString() || '0')} انجام شده
-                        </span>
+              {/* Weekly Calendar */}
+              <div>
+                <h4 className="text-sm text-gray-600 mb-3 flex items-center gap-2">
+                  <Calendar className="w-4 h-4" />
+                  تقویم هفته
+                </h4>
+                <div className="grid grid-cols-7 gap-2">
+                  {weeklyChallenge.weekDays.map((day, index) => (
+                    <div key={index} className="text-center">
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs mb-1 ${getStatusColor(day.status)}`}>
+                        {getStatusIcon(day.status)}
                       </div>
-                      <Progress 
-                        value={((activeChallenge.daysDone || 0) / (activeChallenge.targetDays || 1)) * 100} 
-                        className="h-2 mb-4"
-                      />
+                      <span className="text-xs text-gray-600">{day.day}</span>
                     </div>
+                  ))}
+                </div>
+              </div>
 
-                    {/* Weekly Calendar */}
-                    {challengesData.currentWeek && (
-                      <div>
-                        <h4 className="text-sm text-gray-600 mb-3 flex items-center gap-2">
-                          <Calendar className="w-4 h-4" />
-                          تقویم هفته
-                        </h4>
-                        <div className="grid grid-cols-7 gap-2">
-                          {getWeekDaysFromMarked(
-                            activeChallenge.markedDates || [],
-                            challengesData.currentWeek.start,
-                            challengesData.currentWeek.end
-                          ).map((day, index) => (
-                            <div key={index} className="text-center">
-                              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs mb-1 ${getStatusColor(day.status)}`}>
-                                {getStatusIcon(day.status)}
-                              </div>
-                              <span className="text-xs text-gray-600">{day.day}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Reward - we'll show it even without specific reward data */}
-                    <div className="bg-gradient-to-br from-amber-50 to-yellow-50 rounded-xl p-3 border border-amber-200">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <h4 className="text-sm text-amber-800 mb-1">پاداش</h4>
-                          <div className="flex items-center gap-2 text-xs text-amber-700">
-                            <Star className="w-3 h-3" />
-                            <span>امتیاز و مدال ویژه</span>
-                          </div>
-                        </div>
-                        <div className="text-2xl">
-                          <Trophy className="w-6 h-6 text-amber-600" />
-                        </div>
-                      </div>
+              {/* Reward */}
+              <div className="bg-gradient-to-br from-amber-50 to-yellow-50 rounded-xl p-3 border border-amber-200">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="text-sm text-amber-800 mb-1">پاداش</h4>
+                    <div className="flex items-center gap-2 text-xs text-amber-700">
+                      <Star className="w-3 h-3" />
+                      <span>{toPersianDigits(weeklyChallenge.reward.points.toString())} امتیاز</span>
+                      <span>+</span>
+                      <span>{weeklyChallenge.reward.medal}</span>
                     </div>
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* Claimable Challenges */}
-              {claimableChallenges.length > 0 && (
-                <div>
-                  <h2 className="text-lg mb-4 flex items-center gap-2">
-                    <CheckCircle className="w-5 h-5 text-green-500" />
-                    چالش‌های قابل دریافت
-                  </h2>
-                  <div className="space-y-3">
-                    {claimableChallenges.map((challenge) => (
-                      <Card key={challenge.instanceId} className="rounded-2xl shadow-sm bg-gradient-to-br from-green-50 to-emerald-50 border-green-200">
-                        <CardContent className="p-4">
-                          <div className="flex items-start gap-3">
-                            <div className="w-12 h-12 rounded-full flex items-center justify-center bg-gradient-to-br from-green-400 to-emerald-400">
-                              <Trophy className="w-5 h-5 text-white" />
-                            </div>
-                            <div className="flex-1">
-                              <h3 className="text-base mb-1">{challenge.title}</h3>
-                              <p className="text-sm text-green-700 mb-2">چالش تکمیل شد! ✓</p>
-                              
-                              <div className="flex items-center justify-between gap-3">
-                                <div className="flex items-center gap-2 text-xs text-green-700">
-                                  <Star className="w-3 h-3" />
-                                  <span>{toPersianDigits(challenge.reward?.xp?.toString() || '0')} امتیاز</span>
-                                  {challenge.reward?.badge_code && (
-                                    <>
-                                      <span>+</span>
-                                      <span>مدال</span>
-                                    </>
-                                  )}
-                                </div>
-                                <Button
-                                  size="sm"
-                                  onClick={() => handleClaimReward(challenge.instanceId)}
-                                  disabled={claimingId === challenge.instanceId}
-                                  className="bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white"
-                                >
-                                  {claimingId === challenge.instanceId ? (
-                                    <>
-                                      <Loader2 className="w-3 h-3 ml-1 animate-spin" />
-                                      در حال دریافت...
-                                    </>
-                                  ) : (
-                                    'دریافت پاداش'
-                                  )}
-                                </Button>
-                              </div>
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))}
+                  </div>
+                  <div className="text-2xl">
+                    <Trophy className="w-6 h-6 text-amber-600" />
                   </div>
                 </div>
-              )}
-
-              {/* Upcoming Challenges */}
-              <div>
-                <h2 className="text-lg mb-4">چالش‌های آینده</h2>
-                {upcomingChallenges.length > 0 ? (
-                  <div className="space-y-3">
-                    {upcomingChallenges.map((challenge, idx) => (
-                      <Card key={idx} className="rounded-2xl shadow-sm opacity-60">
-                        <CardContent className="p-4">
-                          <div className="flex items-start gap-3">
-                            <div className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-200">
-                              <Lock className="w-5 h-5 text-gray-500" />
-                            </div>
-                            <div className="flex-1">
-                              <h3 className="text-base mb-1">{challenge.title}</h3>
-                              {challenge.windowStart && challenge.windowEnd && (
-                                <p className="text-sm text-gray-600 mb-2">
-                                  از {toPersianDigits(challenge.windowStart)} تا {toPersianDigits(challenge.windowEnd)}
-                                </p>
-                              )}
-                              
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-2 text-xs text-gray-600">
-                                  <Star className="w-3 h-3" />
-                                  <span>پاداش ویژه</span>
-                                </div>
-                                <Badge variant="outline" className="text-xs">
-                                  به زودی
-                                </Badge>
-                              </div>
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))}
-                  </div>
-                ) : (
-                  <Card className="rounded-2xl shadow-sm bg-gradient-to-br from-gray-50 to-slate-50 border-gray-200">
-                    <CardContent className="p-4">
-                      <div className="text-center">
-                        <p className="text-sm text-gray-600">
-                          چالش‌های جدید به زودی اضافه می‌شوند
-                        </p>
-                      </div>
-                    </CardContent>
-                  </Card>
-                )}
               </div>
-            </>
-          )}
+            </CardContent>
+          </Card>
 
-          {/* Challenge Medals - Static for now */}
-          {!isLoading && !error && (
-            <div>
+          {/* Upcoming Challenges */}
+          <div>
+            <h2 className="text-lg mb-4">چالش‌های آینده</h2>
+            <div className="space-y-3">
+              {upcomingChallenges.map((challenge) => (
+                <Card key={challenge.id} className={`rounded-2xl shadow-sm ${challenge.isLocked ? 'opacity-60' : ''}`}>
+                  <CardContent className="p-4">
+                    <div className="flex items-start gap-3">
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                        challenge.isLocked ? 'bg-gray-200' : 'bg-gradient-to-br from-orange-400 to-amber-400'
+                      }`}>
+                        {challenge.isLocked ? (
+                          <Lock className="w-5 h-5 text-gray-500" />
+                        ) : (
+                          <Trophy className="w-5 h-5 text-white" />
+                        )}
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="text-base mb-1">{challenge.title}</h3>
+                        <p className="text-sm text-gray-600 mb-2">{challenge.description}</p>
+                        
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2 text-xs text-amber-700">
+                            <Star className="w-3 h-3" />
+                            <span>{toPersianDigits(challenge.reward.points.toString())} امتیاز</span>
+                          </div>
+                          {challenge.isLocked && (
+                            <Badge variant="outline" className="text-xs">
+                              پیش‌نیاز: {challenge.prerequisite}
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </div>
+
+          {/* Challenge Medals */}
+          <div>
             <h2 className="text-lg mb-4 flex items-center gap-2">
               <Crown className="w-5 h-5 text-amber-500" />
               مدال‌های چالش
@@ -409,12 +263,10 @@ const ChallengesScreen = () => {
                 </CardContent>
               </Card>
             </div>
-            </div>
-          )}
+          </div>
 
-          {/* Challenge Tips - Static */}
-          {!isLoading && !error && (
-            <Card className="rounded-2xl shadow-sm bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-100">
+          {/* Challenge Tips */}
+          <Card className="rounded-2xl shadow-sm bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-100">
             <CardHeader>
               <CardTitle className="text-base">نکات چالش</CardTitle>
             </CardHeader>
@@ -440,8 +292,7 @@ const ChallengesScreen = () => {
                 <span>چالش‌ها به صورت فردی هستند و برای رقابت با دیگران باید در لیگ شرکت کنید</span>
               </div>
             </CardContent>
-            </Card>
-          )}
+          </Card>
         </div>
 
         {/* Overlay for non-subscribers */}

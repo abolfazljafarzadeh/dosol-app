@@ -1,5 +1,5 @@
 import React from 'react';
-import doosellLogo from '@/assets/doosell-logo.svg';
+import doosellLogo from 'figma:asset/b58b06cddb1628092c6db84c1360a4a9e7aca31b.png';
 
 const SplashScreen = () => {
   return (
